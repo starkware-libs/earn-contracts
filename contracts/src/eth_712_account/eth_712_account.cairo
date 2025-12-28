@@ -51,6 +51,10 @@ pub mod StarknetEth712Account {
         Upgraded: Upgraded,
     }
 
+    // SRC5
+    #[abi(embed_v0)]
+    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
+
     // ABI implementation.
 
     #[abi(embed_v0)]
