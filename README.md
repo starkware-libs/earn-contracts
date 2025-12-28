@@ -1,1 +1,2 @@
-# earn-contracts
+# earn-backend
+Earn portal cairo contracts

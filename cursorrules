@@ -1,0 +1,25 @@
+Review goals:
+- Prioritize security, correctness, and reliability over style-only nits
+- Catch auth/z bugs, data loss, concurrency/race conditions, and injection risks
+- Ensure inputs are validated, errors handled, and sensitive data is never logged
+- Flag risky dependency/version changes and breaking API/DB schema changes
+
+Scope and focus:
+- Focus on application code, tests, infra-as-code, CI/CD changes
+- Ignore generated/build artifacts and vendor folders
+- When performance is relevant, flag N+1 queries, unnecessary I/O, hot-path allocations
+
+Expectations for the review:
+- Be concise and actionable; include code suggestions where possible
+- Summarize major risks; don’t restate diffs
+- Link to relevant docs or standards if needed (lint rules, security guides)
+- Call out missing tests for critical logic and edge cases
+
+Style and consistency:
+- Prefer existing project patterns; follow existing naming and module structure
+- Ensure logging is structured, non-PII, and at appropriate levels
+- Confirm timeouts, retries, and circuit breakers are in place for network calls
+
+Approval guidance:
+- Block on security/correctness issues and flaky or missing critical tests
+- Non-blocking for minor style nits if linters/formatters will catch them
