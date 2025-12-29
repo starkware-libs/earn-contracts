@@ -211,7 +211,7 @@ fn test_change_account_class_hash_affects_only_new_users() {
     /// Changing the account class hash:
     /// - causes subsequent users (new Eth addresses) to get a different account address and class
     ///   hash;
-    /// - both old and new accounts still point to the expected implementations.
+    /// - both old and new accounts still point to the expected implementation.
     let account_factory_addr = setup_account_factory_test_env();
     let account_factory = IAccountFactoryDispatcher { contract_address: account_factory_addr };
     let mut spy = snforge_std::spy_events();
