@@ -56,6 +56,9 @@ pub mod StarknetEth712Account {
         Upgraded: Upgraded,
     }
 
+    // We need an account component implementation, as it's required by pay-master.
+    // However, the make-up of the contract (e.g. not initializing the account component)
+    // renders the __validate__ method unusable.
     #[abi(embed_v0)]
     pub(crate) impl AccountMixinImpl =
         AccountComponent::AccountMixinImpl<ContractState>;
