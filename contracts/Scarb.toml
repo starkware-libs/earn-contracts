@@ -23,8 +23,12 @@ test = "snforge test"
 
 [profile.dev.cairo]
 inlining-strategy = "avoid"
+panic-backtrace = true
 unstable-add-statements-code-locations-debug-info = true
 unstable-add-statements-functions-debug-info = true
+
+[profile.release.cairo]
+inlining-strategy = 30
 
 [[test]]
 build-external-contracts = ["starkware_utils::erc20::erc20_mocks::DualCaseERC20Mock"]

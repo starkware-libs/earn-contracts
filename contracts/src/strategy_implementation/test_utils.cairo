@@ -543,9 +543,11 @@ pub(crate) fn deploy_mock_erc20_contract_at(
     name: ByteArray,
     address_to_deploy_at: ContractAddress,
 ) {
+    let decimals: u8 = 18;
     let mut calldata = ArrayTrait::new();
     name.serialize(ref calldata);
     SYMBOL().serialize(ref calldata);
+    decimals.serialize(ref calldata);
     initial_supply.serialize(ref calldata);
     owner_address.serialize(ref calldata);
     let erc20_contract = snforge_std::declare("DualCaseERC20Mock")
