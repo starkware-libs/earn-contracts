@@ -10,7 +10,7 @@
 /// This allows the account to sign the txs from the wallet of a remote chain,
 /// and execute them locally on Starknet.
 
-#[starknet::contract]
+#[starknet::contract(account)]
 pub mod StarknetEth712Account {
     use contracts::eth_712_account::eth_712_utils::{
         assert_valid_owner, extract_signature, get_outside_execution_hash, is_valid_signature,
@@ -19,6 +19,7 @@ pub mod StarknetEth712Account {
         IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
     };
     use core::num::traits::Zero;
+    use openzeppelin::account::AccountComponent;
     use openzeppelin::account::extensions::src9::interface::ISRC9_V2_ID;
     use openzeppelin::account::extensions::src9::{ISRC9_V2, OutsideExecution};
     use openzeppelin::account::utils::execute_calls;
@@ -33,10 +34,12 @@ pub mod StarknetEth712Account {
     use starknet::{ClassHash, EthAddress, SyscallResultTrait};
 
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
-
+    component!(path: AccountComponent, storage: account, event: AccountEvent);
 
     #[storage]
     pub struct Storage {
+        #[substorage(v0)]
+        pub account: AccountComponent::Storage,
         #[substorage(v0)]
         pub src5: SRC5Component::Storage,
         pub SRC9_nonces: Map<felt252, bool>,
@@ -47,13 +50,19 @@ pub mod StarknetEth712Account {
     #[derive(Drop, starknet::Event)]
     enum Event {
         #[flat]
+        AccountEvent: AccountComponent::Event,
+        #[flat]
         SRC5Event: SRC5Component::Event,
         Upgraded: Upgraded,
     }
 
-    // SRC5
+    // We need an account component implementation, as it's required by pay-master.
+    // However, the make-up of the contract (e.g. not initializing the account component)
+    // renders the __validate__ method unusable.
     #[abi(embed_v0)]
-    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
+    pub(crate) impl AccountMixinImpl =
+        AccountComponent::AccountMixinImpl<ContractState>;
+    impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
 
     // ABI implementation.
 
