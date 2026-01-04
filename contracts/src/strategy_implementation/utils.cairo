@@ -26,7 +26,7 @@ pub(crate) trait IERC4626Deposit<TContractState> {
 // These are the routes for the multi route swap function.
 
 /// Supported Bitcoin wrapper tokens that can be used as `token_in` by the strategy
-/// implementations. Each variant maps to a concrete ERC20 contract address via
+/// implementation. Each variant maps to a concrete ERC20 contract address via
 /// `TokenTrait::contract_address`.
 #[derive(Drop, Copy)]
 pub(crate) enum Token {
