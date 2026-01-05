@@ -144,7 +144,7 @@ pub fn extract_signature(signature: Span<felt252>) -> (Signature, felt252) {
     let s = u256 { low: s_low, high: s_high };
     let v: u128 = (*signature[4]).try_into().unwrap();
     let chain_id = *signature[5];
-    (Signature { r, s, y_parity: v % 2 == 1 }, chain_id)
+    (Signature { r, s, y_parity: v % 2 == 0 }, chain_id)
 }
 
 /// Returns `true` if the signature is valid for the given message hash and eth address.
