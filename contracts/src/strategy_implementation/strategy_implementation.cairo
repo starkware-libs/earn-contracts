@@ -209,7 +209,11 @@ pub mod StrategyImplementation {
             let sell_token_refund = sell_token_amount - sell_token_used;
             if sell_token_refund > 0 {
                 assert(sell_token.transfer(position_owner, sell_token_refund), 'UNEXPECTED_ERROR');
+                // If Avnu consumes less than the full amount, reset the approval to 0 to avoid
+                // dangling allowance.
+                sell_token.approve(strategy, 0);
             }
+
             self
                 .emit(
                     Event::MultiRouteSwap(
