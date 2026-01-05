@@ -16,7 +16,7 @@ pub mod AccountFactory {
     use contracts::account_factory::account_factory::IAccountFactory;
     use contracts::account_factory::utils::{
         IEthAccountInitializerDispatcher, IEthAccountInitializerDispatcherTrait, PRIMER_CLASS_HASH,
-        eth_address_to_account, is_deployed,
+        eth_address_to_account, eth_address_to_account_from_old_account_factory, is_deployed,
     };
     use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
     use core::traits::Into;
@@ -123,6 +123,15 @@ pub mod AccountFactory {
             // If the account contract is deployed, return the address.
             if is_deployed(addr: account_address) {
                 return account_address;
+            }
+
+            // Calculate the address while using the old account factory address as the deployer
+            // address.
+            let old_contract_address = eth_address_to_account_from_old_account_factory(
+                :eth_address,
+            );
+            if is_deployed(addr: old_contract_address) {
+                return old_contract_address;
             }
 
             // Deployment of the account contract is done in three steps:

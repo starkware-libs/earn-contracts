@@ -1,5 +1,6 @@
 use snforge_std;
 use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
+use snforge_std::{ContractClassTrait, DeclareResultTrait, declare};
 use starknet::secp256_trait::Signature;
 use starknet::syscalls::get_class_hash_at_syscall;
 use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
@@ -10,6 +11,7 @@ use crate::account_factory::account_factory::AccountFactory::{
 use crate::account_factory::account_factory::{
     IAccountFactoryDispatcher, IAccountFactoryDispatcherTrait,
 };
+use crate::account_factory::utils::eth_address_to_account_from_old_account_factory;
 use crate::test_utils::{
     APP_GOVERNOR, declare_dummy_eth_address_contract, declare_second_dummy_eth_address_contract,
     eth_address_to_account, get_event_by_selector, get_event_by_selector_n,
@@ -155,6 +157,30 @@ fn test_deploy_account_deploys_once_and_reuses() {
     assert!(
         events_after_second.len() == 1, "no additional AccountDeployed event expected on reuse",
     );
+}
+
+#[test]
+fn test_deploy_account_returns_legacy_address_if_already_deployed() {
+    /// Backward compatibility:
+    /// If the legacy deterministic address (derived with the old factory deployer address) is
+    /// already deployed, `deploy_account` should return it and not emit `AccountDeployed` event.
+    let account_factory_addr = setup_account_factory_test_env();
+
+    let eth_address: EthAddress = '0xBEEF'.try_into().unwrap();
+    let legacy_account = eth_address_to_account_from_old_account_factory(:eth_address);
+
+    // Deploy *any* contract at the legacy address to make `is_deployed(legacy_account)` true.
+    // Using Primer here since it has an empty constructor.
+    let primer_class = declare("Primer").unwrap_syscall().contract_class();
+    primer_class.deploy_at(@array![], legacy_account).unwrap_syscall();
+
+    // Now calling deploy_account should return the legacy address and not emit AccountDeployed.
+    let mut spy = snforge_std::spy_events();
+    let returned = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    assert!(returned == legacy_account, "expected deploy_account to return legacy account address");
+
+    let events = spy.get_events().emitted_by(account_factory_addr).events;
+    assert!(events.len() == 0, "no AccountDeployed event expected when returning legacy address");
 }
 
 #[test]

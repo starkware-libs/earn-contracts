@@ -6,6 +6,12 @@ use starknet::syscalls::get_class_hash_at_syscall;
 use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait, get_contract_address};
 pub(crate) const CONTRACT_ADDRESS_SALT: felt252 = 0;
 
+const OLD_ACCOUNT_FACTORY_ADDRESS: ContractAddress =
+    0x06281147aa25227c09cf65bd2756f507a17bca1bc42e4252072d48b8c44859cf
+    .try_into()
+    .unwrap();
+
+
 #[cfg(target: "test")]
 pub(crate) const PRIMER_CLASS_HASH: ClassHash =
     0x279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
@@ -43,6 +49,17 @@ pub fn eth_address_to_account(eth_address: EthAddress) -> ContractAddress {
         class_hash: PRIMER_CLASS_HASH.into(),
         constructor_calldata: array![].span(),
         deployer_address: get_contract_address().into(),
+    )
+}
+
+/// Computes the account contract address for a given Eth address, using the old account factory
+/// address as the deployer address.
+pub fn eth_address_to_account_from_old_account_factory(eth_address: EthAddress) -> ContractAddress {
+    compute_contract_address(
+        salt: eth_address.into(),
+        class_hash: PRIMER_CLASS_HASH.into(),
+        constructor_calldata: array![].span(),
+        deployer_address: OLD_ACCOUNT_FACTORY_ADDRESS.into(),
     )
 }
 
