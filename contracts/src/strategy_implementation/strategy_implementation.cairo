@@ -30,13 +30,11 @@ pub mod StrategyImplementation {
     component!(path: SRC5Component, storage: src5, event: src5Event);
     component!(path: ReplaceabilityComponent, storage: replaceability, event: ReplaceabilityEvent);
 
-
     #[abi(embed_v0)]
     impl RolesImpl = RolesComponent::RolesImpl<ContractState>;
     #[abi(embed_v0)]
-    impl AccessControlImpl =
-        AccessControlComponent::AccessControlImpl<ContractState>;
-
+    impl ReplaceabilityImpl =
+        ReplaceabilityComponent::ReplaceabilityImpl<ContractState>;
 
     #[storage]
     struct Storage {
