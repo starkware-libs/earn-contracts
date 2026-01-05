@@ -21,8 +21,8 @@ const OUTSIDE_EXECUTION_TYPE_HASH: u256 =
 // keccak("Starknet")
 const NAME_HASH: u256 = 0xc3396425150568dfb7fcdc8d6f89c8846fe7f8f6c00a83ff9e5eb0424d62d7c3_u256;
 
-// keccak("1") (version of the EIP-712 domain).
-const VERSION_HASH: u256 = 0xc89efdaa54c0f20c7adf612882df0950f5a951637e0307cdcb4c672f298b8bc6_u256;
+// keccak("2") (version of the EIP-712 domain).
+const VERSION_HASH: u256 = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5_u256;
 
 // keccak256("\x19Ethereum Signed Message:\n41Sign to verify that you own this account.")
 // msg_hash of the account ownership message. (Fixed per all chains).
