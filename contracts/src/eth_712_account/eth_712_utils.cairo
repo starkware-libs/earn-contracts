@@ -105,8 +105,9 @@ pub fn push_domain_separator(ref res: ByteArray, chain_id: felt252) {
     push_u256(ref byte_array, VERSION_HASH);
     push_u256(ref byte_array, chain_id.into());
 
-    // For the verifyingContract field we push Zero address.
-    push_u256(ref byte_array, 0_u256);
+    // For the verifyingContract field we push the local chain id, to prevent cross-chain replay.
+    let trg_chain_id: u256 = starknet::get_tx_info().unbox().chain_id.into();
+    push_u256(ref byte_array, trg_chain_id);
 
     push_keccak(ref res, @byte_array);
 }
