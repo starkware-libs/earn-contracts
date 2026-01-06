@@ -18,9 +18,6 @@ const CALL_TYPE_HASH: u256 =
 const OUTSIDE_EXECUTION_TYPE_HASH: u256 =
     0x57fbef2abe14202f3651b3935a8feddd357b8f83a862e046239d196ec76f281e_u256;
 
-// keccak("Starknet")
-const NAME_HASH: u256 = 0xc3396425150568dfb7fcdc8d6f89c8846fe7f8f6c00a83ff9e5eb0424d62d7c3_u256;
-
 // keccak("2") (version of the EIP-712 domain).
 const VERSION_HASH: u256 = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5_u256;
 
@@ -101,15 +98,23 @@ pub fn push_domain_separator(ref res: ByteArray, chain_id: felt252) {
     let mut byte_array: ByteArray = "";
 
     push_u256(ref byte_array, EIP712_DOMAIN_TYPE_HASH);
-    push_u256(ref byte_array, NAME_HASH);
+    // As name field we push the keccak of the Starknet chain id for execution domain separation.
+    push_u256(ref byte_array, sn_chain_id_keccak());
     push_u256(ref byte_array, VERSION_HASH);
+    // EIP-712 domain separator chain id (source chain id).
     push_u256(ref byte_array, chain_id.into());
 
-    // For the verifyingContract field we push the local chain id, to prevent cross-chain replay.
-    let trg_chain_id: u256 = starknet::get_tx_info().unbox().chain_id.into();
-    push_u256(ref byte_array, trg_chain_id);
+    // As verifyingContract field we push the lower 128 bits of the account contract address.
+    // This provides separation of the executing contract domain.
+    push_u256(ref byte_array, contract_address_low());
 
     push_keccak(ref res, @byte_array);
+}
+
+fn contract_address_low() -> u256 {
+    let address_felt: felt252 = starknet::get_contract_address().into();
+    let address_u256: u256 = address_felt.into();
+    u256 { low: address_u256.low, high: 0_u128 }
 }
 
 pub fn get_outside_execution_hash(outside_execution: @OutsideExecution, chain_id: felt252) -> u256 {
@@ -157,4 +162,24 @@ pub fn is_valid_signature(msg_hash: u256, signature: Signature, eth_address: Eth
 pub fn assert_valid_owner(eth_address: EthAddress, signature: Signature) {
     let msg_hash = OWNERSHIP_TRANSFER_MSG_HASH;
     assert(is_valid_signature(:msg_hash, :signature, :eth_address), 'INVALID_OWNERSHIP_SIGNATURE');
+}
+
+fn sn_chain_id_keccak() -> u256 {
+    let cid_str = short_string_to_byte_array(starknet::get_tx_info().unbox().chain_id);
+    let cid_hash = compute_keccak_byte_array(@cid_str);
+    u256 {
+        low: core::integer::u128_byte_reverse(cid_hash.high),
+        high: core::integer::u128_byte_reverse(cid_hash.low),
+    }
+}
+
+pub fn short_string_to_byte_array(felt: felt252) -> ByteArray {
+    let mut ba = Default::default();
+    let mut felt_num: u256 = felt.into();
+    while (felt_num != 0) {
+        let byte: u8 = (felt_num % 256_u256).try_into().unwrap();
+        ba.append_byte(byte);
+        felt_num = felt_num / 256_u256;
+    }
+    ba.rev()
 }
