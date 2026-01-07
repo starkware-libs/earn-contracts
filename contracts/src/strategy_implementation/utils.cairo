@@ -173,7 +173,7 @@ pub(crate) fn avnu_multi_route_swap(
 }
 
 /// Deserializes a secp256k1 signature from `parameters`, consuming 5 items:
-/// `[r_high, r_low, s_high, s_low, y_parity]`.
+/// `[r_high, r_low, s_high, s_low, v]`.
 ///
 /// Returns `Signature { r: u256{low, high}, s: u256{low, high}, y_parity: bool }`.
 /// Panics with `INVALID_SIGNATURE_FORMAT` if decoding fails.
@@ -186,7 +186,9 @@ pub(crate) fn deserialize_signature(ref parameters: Span<felt252>) -> Signature 
     let s_low: u128 = Serde::deserialize(ref parameters).expect('INVALID_SIGNATURE_FORMAT');
     let s: u256 = u256 { low: s_low, high: s_high };
 
-    let y_parity: bool = Serde::deserialize(ref parameters).expect('INVALID_SIGNATURE_FORMAT');
+    // If v is 27 it should be false, if v is 28 it should be true.
+    let v: u128 = Serde::deserialize(ref parameters).expect('INVALID_SIGNATURE_FORMAT');
+    let y_parity: bool = v % 2 == 0;
 
     Signature { r, s, y_parity }
 }
