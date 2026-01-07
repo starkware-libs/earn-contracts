@@ -1,0 +1,31 @@
+name: Cairo CI
+
+on:
+  pull_request:
+
+jobs:
+  cairo_tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: foundry-rs/setup-snfoundry@v5.0.0
+        with:
+          starknet-foundry-version: "0.54.1"
+
+      - uses: software-mansion/setup-scarb@v1.6.0
+        with:
+          scarb-version: "2.14.0"
+
+      - name: run formatting
+        run: scarb fmt -w --check
+
+      - name: install cairo-coverage
+        run: |
+          curl -L https://raw.githubusercontent.com/software-mansion/cairo-coverage/v0.6.0/scripts/install.sh | sh
+
+      - name: run test and coverage
+        run: scarb test -w --coverage
