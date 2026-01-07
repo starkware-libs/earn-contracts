@@ -90,13 +90,18 @@ pub(crate) fn dummy_apply_parameters(token_in: ContractAddress, amount: u256) ->
 }
 
 /// Serializes a `Signature` into calldata in the exact layout expected by the strategy code.
-/// Layout (5 felts): `r_high, r_low, s_high, s_low, y_parity`.
+/// Layout (5 felts): `r_high, r_low, s_high, s_low, v`.
 pub(crate) fn serialize_signature(signature: @Signature, ref calldata: Array<felt252>) {
+    let v: u128 = if *signature.y_parity {
+        28
+    } else {
+        27
+    };
     Serde::serialize(signature.r.high, ref calldata);
     Serde::serialize(signature.r.low, ref calldata);
     Serde::serialize(signature.s.high, ref calldata);
     Serde::serialize(signature.s.low, ref calldata);
-    Serde::serialize(signature.y_parity, ref calldata);
+    Serde::serialize(@v, ref calldata);
 }
 
 pub(crate) fn dummy_apply_parameters_with_protocol(
