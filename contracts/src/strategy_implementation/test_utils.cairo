@@ -95,7 +95,7 @@ pub(crate) fn serialize_signature(signature: @Signature, ref calldata: Array<fel
     let v: u128 = if *signature.y_parity {
         28
     } else {
-        27
+        500
     };
     Serde::serialize(signature.r.high, ref calldata);
     Serde::serialize(signature.r.low, ref calldata);

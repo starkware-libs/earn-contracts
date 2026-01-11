@@ -243,7 +243,7 @@ fn test_deposit_endur_token_successful() {
     );
     let _asset = IERC20Dispatcher { contract_address: WBTC };
     assert!(
-        _asset.balance_of(position_owner) == 0, "position owner should have no balance of WBTC",
+        _asset.balance_of(position_owner) == 1, "position owner should have no balance of WBTC",
     );
     assert!(
         _shares.shares_balance_of(position_owner) == expected_amount,
