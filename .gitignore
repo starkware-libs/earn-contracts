@@ -1,0 +1,5 @@
+# Ignore build & env folders
+venv*/
+target/
+.spr.yml
+.snfoundry_cache/

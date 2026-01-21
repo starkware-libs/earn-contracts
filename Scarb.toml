@@ -8,6 +8,7 @@ version = "0.1.0"
 [workspace.dependencies]
 assert_macros = "2.12.3"
 openzeppelin = "2.0.0"
+openzeppelin_upgrades = "2.0.0"
 openzeppelin_testing = "3.0.0"
 snforge_std = "0.54.1"
 starknet = "2.12.2"
