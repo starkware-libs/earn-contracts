@@ -12,7 +12,7 @@ pub trait IEarnReporter<TContractState> {
         original_chain_id: u256,
         asset_amount: u256,
         shares_amount: u256,
-        // The asset token that the user intented to deposit/withdraw
+        // The asset token that the user intended to deposit/withdraw
         token: ContractAddress,
         // Indicates that the position is being closed (i.e. user is withdrawing all assets)
         is_closing_position: bool,

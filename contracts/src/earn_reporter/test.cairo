@@ -3,7 +3,6 @@ use contracts::earn_reporter::earn_reporter::{
     IEarnReporterDispatcher, IEarnReporterDispatcherTrait,
 };
 use openzeppelin::access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
-use snforge_std;
 use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
 use snforge_std::{ContractClassTrait, DeclareResultTrait};
 use starknet::syscalls::get_class_hash_at_syscall;
