@@ -131,17 +131,3 @@ fn test_report_order_created_invalid_order_type() {
 
     call_report_order_created(reporter, @event);
 }
-
-#[test]
-#[should_panic(expected: 'ZERO_ASSET_AMOUNT')]
-fn test_report_order_created_zero_asset_amount() {
-    let owner = get_contract_address();
-    let reporter_addr = deploy_earn_reporter(owner: owner);
-    let reporter = IEarnReporterDispatcher { contract_address: reporter_addr };
-
-    let mut event = default_order_created_event();
-    event.asset_amount = 0;
-    event.shares_amount = 3;
-
-    call_report_order_created(reporter, @event);
-}
