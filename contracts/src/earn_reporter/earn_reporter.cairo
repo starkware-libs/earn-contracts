@@ -91,7 +91,7 @@ pub mod EarnReporter {
             token: ContractAddress,
             is_closing_position: bool,
         ) {
-            assert(order_type == 'deposit' || order_type == 'withdraw', 'INVALID_ORDER_TYPE');            
+            assert(order_type == 'deposit' || order_type == 'withdraw', 'INVALID_ORDER_TYPE');
             assert(asset_amount > 0, 'ZERO_ASSET_AMOUNT');
             self
                 .emit(

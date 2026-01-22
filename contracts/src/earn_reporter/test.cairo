@@ -30,7 +30,9 @@ fn deploy_earn_reporter(owner: ContractAddress) -> ContractAddress {
     let earn_reporter_class = snforge_std::declare("EarnReporter")
         .unwrap_syscall()
         .contract_class();
-    let (earn_reporter_addr, _) = earn_reporter_class.deploy(@array![owner.into()]).unwrap_syscall();
+    let (earn_reporter_addr, _) = earn_reporter_class
+        .deploy(@array![owner.into()])
+        .unwrap_syscall();
     earn_reporter_addr
 }
 
