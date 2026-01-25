@@ -36,6 +36,9 @@ pub mod StrategyImplementation {
     component!(path: SRC5Component, storage: src5, event: src5Event);
     component!(path: ReplaceabilityComponent, storage: replaceability, event: ReplaceabilityEvent);
 
+    pub(crate) const DEPOSIT: felt252 = 'deposit';
+
+
     #[abi(embed_v0)]
     impl RolesImpl = RolesComponent::RolesImpl<ContractState>;
     #[abi(embed_v0)]
@@ -242,8 +245,6 @@ pub mod StrategyImplementation {
             buy_token_gained
         }
 
-        /// Reports an order to the earn reporter contract (if configured).
-        /// Skips reporting if earn_reporter address is zero.
         fn report_to_earn_reporter(
             ref self: ContractState,
             position_owner: ContractAddress,
@@ -255,13 +256,14 @@ pub mod StrategyImplementation {
             token: ContractAddress,
         ) {
             let reporter = self.earn_reporter.read();
+            // Skips reporting if earn_reporter address is zero.
             if reporter.is_non_zero() {
                 IEarnReporterDispatcher { contract_address: reporter }
                     .report_order_created(
                         order_creator_address: position_owner,
                         evm_address: eth_address,
                         :strategy_id,
-                        order_type: 'deposit',
+                        order_type: DEPOSIT,
                         original_chain_id: chain_id.into(),
                         :asset_amount,
                         :shares_amount,
@@ -301,7 +303,7 @@ pub mod StrategyImplementation {
             assert(get_caller_address() == contract_address, 'ONLY_SELF_CALLER');
 
             let strategy: Strategy = strategy_from_protocol_and_token(:protocol, :token_in);
-            match strategy {
+            let shares_amount = match strategy {
                 Strategy::Endur(_) => {
                     // No additional parameters are expected for Endur after the common header.
                     assert(parameters.len() == 0, 'UNEXPECTED_PARAMETERS');
@@ -324,16 +326,7 @@ pub mod StrategyImplementation {
                                 },
                             ),
                         );
-                    self
-                        .report_to_earn_reporter(
-                            :position_owner,
-                            :eth_address,
-                            strategy_id: 'ENDUR',
-                            :chain_id,
-                            asset_amount: amount,
-                            shares_amount: lst_amount,
-                            token: token_in,
-                        );
+                    lst_amount
                 },
                 Strategy::Troves(token) => {
                     // No additional parameters are expected for Troves after the common header.
@@ -372,38 +365,29 @@ pub mod StrategyImplementation {
                                 },
                             ),
                         );
-                    self
-                        .report_to_earn_reporter(
-                            :position_owner,
-                            :eth_address,
-                            strategy_id: 'TROVES',
-                            :chain_id,
-                            asset_amount: amount,
-                            shares_amount: troves_amount,
-                            token: token_in,
-                        );
+                    troves_amount
                 },
                 Strategy::Avnu => {
-                    let buy_amount = self
+                    self
                         .avnu_multi_route_swap(
                             sell_token_address: token_in,
                             sell_token_amount: amount,
                             strategy: strategy.strategy_address(),
                             :position_owner,
                             avnu_parameters: parameters,
-                        );
-                    self
-                        .report_to_earn_reporter(
-                            :position_owner,
-                            :eth_address,
-                            strategy_id: 'AVNU',
-                            :chain_id,
-                            asset_amount: amount,
-                            shares_amount: buy_amount,
-                            token: token_in,
-                        );
+                        )
                 },
-            }
+            };
+            self
+                .report_to_earn_reporter(
+                    :position_owner,
+                    :eth_address,
+                    strategy_id: strategy.strategy_id(),
+                    :chain_id,
+                    asset_amount: amount,
+                    :shares_amount,
+                    token: token_in,
+                );
         }
 
         /// Applies the strategy for the caller by transferring `amount` of `token_in`, executing

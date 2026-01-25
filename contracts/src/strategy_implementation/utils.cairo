@@ -65,6 +65,15 @@ pub(crate) impl _StrategyImpl of StrategyTrait {
             Strategy::Avnu => AVNU_EXCHANGE,
         }
     }
+
+    /// Returns the strategy identifier as a felt252 short string.
+    fn strategy_id(self: Strategy) -> felt252 {
+        match self {
+            Strategy::Endur(_) => 'ENDUR',
+            Strategy::Troves(_) => 'TROVES',
+            Strategy::Avnu => 'AVNU',
+        }
+    }
 }
 
 
