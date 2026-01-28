@@ -453,7 +453,7 @@ pub(crate) fn assert_apply_failed_event(
 
 
 /// Asserts that the nth `Deposited` event matches the expected args.
-/// - `protocol`: apply header protocol felt (`'ENDUR'` / `'TROVES'` / `'FORGE_YIELDS'`).
+/// - `protocol`: apply header protocol felt (`'ENDUR'` / `'TROVES'` / `'FORGE_YIELDS'` / `'NOON'`).
 /// - `wrapper_token`: wrapper `token_in` used for classification.
 /// - If `protocol == 'TROVES'`, the expected emitted `Deposited.token` is the LST token.
 pub(crate) fn assert_deposited_event(

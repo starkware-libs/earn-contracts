@@ -1,5 +1,6 @@
 use contracts::known_addresses::{
-    AVNU_EXCHANGE, ENDUR_TBTC, ENDUR_WBTC, FORGE_YIELDS_WBTC, LBTC, TBTC, TROVES_TBTC, WBTC,
+    AVNU_EXCHANGE, ENDUR_TBTC, ENDUR_WBTC, FORGE_YIELDS_WBTC, LBTC, NOON_WBTC, TBTC, TROVES_TBTC,
+    WBTC,
 };
 use contracts::strategy_implementation::interface::{
     IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait,
@@ -519,7 +520,7 @@ fn test_deposit_forge_yields_failure() {
         protocol: 'FORGE_YIELDS',
     );
 
-    // The apply should fail with 'ERROR' on the deposit to the FORGE_YIELDS_WBTC vault and the
+    // The apply should fail with 'ERROR' on the deposit to the FORGE_YIELDS vault and the
     // balance of the WBTC should be transferred to the position owner.
     let mut spy = snforge_std::spy_events();
     apply(:strategy_implementation_addr, :apply_caller, parameters: apply_parameters);
@@ -532,7 +533,7 @@ fn test_deposit_forge_yields_failure() {
 
     assert!(
         events.len() == 1,
-        "On FORGE_YIELDS_WBTC deposit failure, exactly one event is expected: ApplyFailed",
+        "On FORGE_YIELDS deposit failure, exactly one event is expected: ApplyFailed",
     );
 }
 
@@ -563,6 +564,114 @@ fn test_forgeyields_only_accepts_wbtc() {
     assert!(
         events.len() == 1,
         "On FORGE_YIELDS with non-WBTC token, exactly one event is expected: ApplyFailed",
+    );
+}
+
+#[test]
+fn test_deposit_noon_successful() {
+    /// Apply(WBTC, NOON): deposits into the NOON vault, transfers shares to the
+    /// position owner, and emits Deposited.
+    let strategy_implementation_addr = setup_strategy_implementation_test_env();
+    let apply_caller = 0x4324.try_into().unwrap();
+
+    // Deploy the ERC4626 mock contract at the NOON_WBTC address.
+    deploy_erc4626_deposit_mint_mock(erc4626_asset_address: WBTC, address_to_deploy_at: NOON_WBTC);
+    let shares = IERC4626DepositMintMockDispatcher { contract_address: NOON_WBTC };
+
+    let apply_parameters = build_prefunded_apply_parameters_with_token_address(
+        :strategy_implementation_addr,
+        account_to_fund: apply_caller,
+        address_to_deploy_at: WBTC,
+        protocol: 'NOON',
+    );
+    let position_owner = get_position_owner(
+        :strategy_implementation_addr, parameters: @apply_parameters.parameters,
+    );
+
+    let mut spy = snforge_std::spy_events();
+    apply(:strategy_implementation_addr, :apply_caller, parameters: apply_parameters);
+    let expected_amount = shares.preview_deposit(assets: apply_parameters.amount);
+
+    let events = spy.get_events().emitted_by(strategy_implementation_addr).events.span();
+    assert_deposited_event(
+        :events,
+        funds_receiver: position_owner,
+        protocol: 'NOON',
+        wrapper_token: WBTC,
+        amount_deposited: apply_parameters.amount,
+        amount_received: expected_amount,
+    );
+    let asset = IERC20Dispatcher { contract_address: WBTC };
+    assert!(asset.balance_of(position_owner) == 0, "position owner should have no balance of WBTC");
+    assert!(
+        shares.shares_balance_of(position_owner) == expected_amount,
+        "position owner should have the balance of the shares received",
+    );
+
+    assert!(events.len() == 1, "One event expected on deposit successful - Deposited event");
+}
+
+#[test]
+fn test_deposit_noon_failure() {
+    /// Apply(WBTC, NOON): if the NOON deposit fails, emit ApplyFailed and
+    /// refund WBTC to the position owner.
+    let strategy_implementation_addr = setup_strategy_implementation_test_env();
+    let apply_caller = 0x4324.try_into().unwrap();
+
+    // Deploy the ERC4626 mock failure contract at the NOON_WBTC address. This will panic
+    // with 'ERROR'.
+    deploy_4626_failure_mock(address_to_deploy_at: NOON_WBTC);
+
+    let apply_parameters = build_prefunded_apply_parameters_with_token_address(
+        :strategy_implementation_addr,
+        account_to_fund: apply_caller,
+        address_to_deploy_at: WBTC,
+        protocol: 'NOON',
+    );
+
+    // The apply should fail with 'ERROR' on the deposit to the NOON vault and the
+    // balance of the WBTC should be transferred to the position owner.
+    let mut spy = snforge_std::spy_events();
+    apply(:strategy_implementation_addr, :apply_caller, parameters: apply_parameters);
+
+    let events = spy.get_events().emitted_by(strategy_implementation_addr).events.span();
+    let errors = array!['ERROR', 'ENTRYPOINT_FAILED', 'ENTRYPOINT_FAILED'];
+    assert_apply_failed_with_refund(
+        :events, :strategy_implementation_addr, :apply_parameters, :errors,
+    );
+
+    assert!(
+        events.len() == 1, "On NOON deposit failure, exactly one event is expected: ApplyFailed",
+    );
+}
+
+#[test]
+fn test_noon_only_accepts_wbtc() {
+    /// Apply(TBTC, NOON): NOON only accepts WBTC, so using TBTC should fail with
+    /// 'NOON_ONLY_WBTC', emit ApplyFailed and refund TBTC to the position owner.
+    let strategy_implementation_addr = setup_strategy_implementation_test_env();
+    let apply_caller = 0x4324.try_into().unwrap();
+
+    let apply_parameters = build_prefunded_apply_parameters_with_token_address(
+        :strategy_implementation_addr,
+        account_to_fund: apply_caller,
+        address_to_deploy_at: TBTC,
+        protocol: 'NOON',
+    );
+
+    // The apply should fail with 'NOON_ONLY_WBTC' during strategy classification.
+    let mut spy = snforge_std::spy_events();
+    apply(:strategy_implementation_addr, :apply_caller, parameters: apply_parameters);
+
+    let events = spy.get_events().emitted_by(strategy_implementation_addr).events.span();
+    let errors = array!['NOON_ONLY_WBTC', 'ENTRYPOINT_FAILED'];
+    assert_apply_failed_with_refund(
+        :events, :strategy_implementation_addr, :apply_parameters, :errors,
+    );
+
+    assert!(
+        events.len() == 1,
+        "On NOON with non-WBTC token, exactly one event is expected: ApplyFailed",
     );
 }
 

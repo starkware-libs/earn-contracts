@@ -8,8 +8,8 @@ use core::pedersen::PedersenTrait;
 use starknet::ContractAddress;
 use starknet::secp256_trait::Signature;
 use crate::known_addresses::{
-    ENDUR_LBTC, ENDUR_SOLVBTC, ENDUR_TBTC, ENDUR_WBTC, FORGE_YIELDS_WBTC, LBTC, SOLVBTC, TBTC,
-    TROVES_LBTC, TROVES_SOLVBTC, TROVES_TBTC, TROVES_WBTC, WBTC,
+    ENDUR_LBTC, ENDUR_SOLVBTC, ENDUR_TBTC, ENDUR_WBTC, FORGE_YIELDS_WBTC, LBTC, NOON_WBTC, SOLVBTC,
+    TBTC, TROVES_LBTC, TROVES_SOLVBTC, TROVES_TBTC, TROVES_WBTC, WBTC,
 };
 
 
@@ -39,13 +39,14 @@ pub(crate) enum Token {
 
 /// High-level strategy classification derived from (protocol selector + token_in) used by
 /// `apply_on_self`.
-/// For Endur, Troves, and ForgeYields variants, the attached `Token` encodes the `token_in`.
+/// For Endur, Troves, ForgeYields, and Noon variants, the attached `Token` encodes the `token_in`.
 /// Avnu does not carry a Token.
 #[derive(Drop, Copy)]
 pub(crate) enum Strategy {
     Endur: Token,
     Troves: Token,
     ForgeYields: Token,
+    Noon: Token,
     Avnu,
 }
 
@@ -65,6 +66,8 @@ pub(crate) impl _StrategyImpl of StrategyTrait {
             Strategy::Troves(Token::LBTC) => TROVES_LBTC,
             Strategy::ForgeYields(Token::WBTC) => FORGE_YIELDS_WBTC,
             Strategy::ForgeYields(_) => panic_with_felt252('FORGE_YIELDS_ONLY_WBTC'),
+            Strategy::Noon(Token::WBTC) => NOON_WBTC,
+            Strategy::Noon(_) => panic_with_felt252('NOON_ONLY_WBTC'),
             Strategy::Avnu => AVNU_EXCHANGE,
         }
     }
@@ -75,6 +78,7 @@ pub(crate) impl _StrategyImpl of StrategyTrait {
             Strategy::Endur(_) => 'ENDUR',
             Strategy::Troves(_) => 'TROVES',
             Strategy::ForgeYields(_) => 'FORGE_YIELDS',
+            Strategy::Noon(_) => 'NOON',
             Strategy::Avnu => 'AVNU',
         }
     }
@@ -112,9 +116,10 @@ pub(crate) impl _TokenImpl of TokenTrait {
 ///
 /// Reverts with:
 /// - 'INVALID_PROTOCOL' if the protocol selector is unknown.
-/// - 'INVALID_TOKEN' if `token_in` is not a supported wrapper token (ENDUR/TROVES/FORGE_YIELDS
+/// - 'INVALID_TOKEN' if `token_in` is not a supported wrapper token (ENDUR/TROVES/FORGE_YIELDS/NOON
 /// only).
 /// - 'FORGE_YIELDS_ONLY_WBTC' if FORGE_YIELDS is used with a non-WBTC token.
+/// - 'NOON_ONLY_WBTC' if NOON is used with a non-WBTC token.
 /// Note: for `protocol == 'AVNU'` we don't validate `token_in` here.
 pub(crate) fn strategy_from_protocol_and_token(
     protocol: felt252, token_in: ContractAddress,
@@ -136,6 +141,12 @@ pub(crate) fn strategy_from_protocol_and_token(
         // FORGE_YIELDS only supports WBTC
         assert(token_in == WBTC, 'FORGE_YIELDS_ONLY_WBTC');
         return Strategy::ForgeYields(Token::WBTC);
+    }
+
+    if protocol == 'NOON' {
+        // NOON only supports WBTC
+        assert(token_in == WBTC, 'NOON_ONLY_WBTC');
+        return Strategy::Noon(Token::WBTC);
     }
 
     panic_with_felt252('INVALID_PROTOCOL');

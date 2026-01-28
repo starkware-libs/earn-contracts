@@ -70,6 +70,13 @@ pub(crate) const FORGE_YIELDS_WBTC: ContractAddress =
     .try_into()
     .unwrap();
 
+// Contract addresses for Noon strategies. Only WBTC is supported.
+pub(crate) const NOON_WBTC: ContractAddress =
+    0x023ccbaf0f70e8dcb29520ab4ea12e2e916fb71204677321e91e525062279e35
+    .try_into()
+    .unwrap();
+
+
 // Avnu strategy
 pub(crate) const AVNU_EXCHANGE: ContractAddress =
     0x04270219d365d6B017231b52e92B3fb5d7C8378b05e9Abc97724537a80E93b0f
