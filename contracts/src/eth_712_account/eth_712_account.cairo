@@ -22,6 +22,7 @@ pub mod StarknetEth712Account {
     use openzeppelin::account::AccountComponent;
     use openzeppelin::account::extensions::src9::interface::ISRC9_V2_ID;
     use openzeppelin::account::extensions::src9::{ISRC9_V2, OutsideExecution};
+    use openzeppelin::account::interface::ISRC6_ID;
     use openzeppelin::account::utils::execute_calls;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::introspection::src5::SRC5Component::InternalTrait as SRC5InternalTrait;
@@ -75,6 +76,8 @@ pub mod StarknetEth712Account {
 
             // Register 'execute_from_outside_v2' interface, as paymaster requires this.
             self.src5.register_interface(ISRC9_V2_ID);
+            // Register Account interface (ISRC6) so that we can receive 721/1155 tokens.
+            self.src5.register_interface(ISRC6_ID);
         }
         fn upgrade(
             ref self: ContractState,
