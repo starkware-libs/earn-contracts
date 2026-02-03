@@ -36,6 +36,7 @@ pub mod StrategyImplementation {
     component!(path: SRC5Component, storage: src5, event: src5Event);
     component!(path: ReplaceabilityComponent, storage: replaceability, event: ReplaceabilityEvent);
 
+    // Consider using the const defined in earn_reporter contract
     pub(crate) const DEPOSIT: felt252 = 'deposit';
 
 
@@ -466,6 +467,7 @@ pub mod StrategyImplementation {
         /// Sets the earn reporter contract address for order reporting.
         fn set_earn_reporter(ref self: ContractState, reporter: ContractAddress) {
             self.roles.only_app_governor();
+            // Use self.earn_reporter() here and also in other places.
             let previous_reporter = self.earn_reporter.read();
             self.earn_reporter.write(reporter);
             self

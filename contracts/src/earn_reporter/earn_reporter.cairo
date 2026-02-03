@@ -1,5 +1,6 @@
 use starknet::{ClassHash, ContractAddress, EthAddress};
 
+// TODO: Consider moving to an interface library (just to be consistent with other interfaces)
 #[starknet::interface]
 pub trait IEarnReporter<TContractState> {
     fn report_order_created(
@@ -80,6 +81,7 @@ pub mod EarnReporter {
     #[abi(embed_v0)]
     impl EarnReporterImpl of IEarnReporter<ContractState> {
         fn report_order_created(
+            // Why ref?
             ref self: ContractState,
             order_creator_address: ContractAddress,
             evm_address: EthAddress,
@@ -91,6 +93,7 @@ pub mod EarnReporter {
             token: ContractAddress,
             is_closing_position: bool,
         ) {
+            // Move to a constant (or import from strategy_implementation)
             assert(order_type == 'deposit' || order_type == 'withdraw', 'INVALID_ORDER_TYPE');
             self
                 .emit(

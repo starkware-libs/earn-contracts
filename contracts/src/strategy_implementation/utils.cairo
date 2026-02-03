@@ -28,7 +28,7 @@ pub(crate) trait IERC4626Deposit<TContractState> {
 /// Supported Bitcoin wrapper tokens that can be used as `token_in` by the strategy
 /// implementation. Each variant maps to a concrete ERC20 contract address via
 /// `TokenTrait::contract_address`.
-#[derive(Drop, Copy)]
+#[derive(Drop, Copy, PartialEq)]
 pub(crate) enum Token {
     WBTC,
     TBTC,
@@ -139,13 +139,13 @@ pub(crate) fn strategy_from_protocol_and_token(
 
     if protocol == 'FORGE_YIELDS' {
         // FORGE_YIELDS only supports WBTC
-        assert(token_in == WBTC, 'FORGE_YIELDS_ONLY_WBTC');
+        assert(token == Token::WBTC, 'FORGE_YIELDS_ONLY_WBTC');
         return Strategy::ForgeYields(Token::WBTC);
     }
 
     if protocol == 'NOON' {
         // NOON only supports WBTC
-        assert(token_in == WBTC, 'NOON_ONLY_WBTC');
+        assert(token == Token::WBTC, 'NOON_ONLY_WBTC');
         return Strategy::Noon(Token::WBTC);
     }
 
