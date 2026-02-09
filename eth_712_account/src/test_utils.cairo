@@ -1,3 +1,4 @@
+use openzeppelin::account::extensions::src9::OutsideExecution;
 use snforge_std::{ContractClassTrait, DeclareResultTrait};
 use starknet::secp256_trait::Signature;
 use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
@@ -60,4 +61,108 @@ pub fn declare_eth712_account() -> ClassHash {
 /// Declare the RegisterInterfacesEIC contract and return its class hash.
 pub fn declare_register_interfaces_eic() -> ClassHash {
     *snforge_std::declare("RegisterInterfacesEIC").unwrap_syscall().contract_class().class_hash
+}
+
+// ================================
+// OutsideExecution test fixtures
+// ================================
+
+/// Fixed timestamps for testing execute_from_outside_v2.
+/// Use warp() to set block timestamp to TEST_TIMESTAMP.
+pub const EXECUTE_AFTER: u64 = 1000;
+pub const EXECUTE_BEFORE: u64 = 3000;
+pub const TEST_TIMESTAMP: u64 = 2000;
+pub const TEST_NONCE: felt252 = 1;
+pub const EVM_CHAIN_ID: felt252 = 1;
+
+/// ANY_CALLER constant from SNIP-9.
+pub const ANY_CALLER: felt252 = 'ANY_CALLER';
+
+/// Expected deployed contract address for signature validation.
+/// This is deterministic based on snforge's deployment.
+pub fn EXPECTED_CONTRACT_ADDRESS() -> ContractAddress {
+    0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4.try_into().unwrap()
+}
+
+/// Returns a test OutsideExecution with fixed values and empty calls.
+/// Using empty calls to avoid ENTRYPOINT_NOT_FOUND errors during testing.
+pub fn get_test_outside_execution(_contract_address: ContractAddress) -> OutsideExecution {
+    OutsideExecution {
+        caller: ANY_CALLER.try_into().unwrap(),
+        nonce: TEST_NONCE,
+        execute_after: EXECUTE_AFTER,
+        execute_before: EXECUTE_BEFORE,
+        calls: array![].span() // Empty calls for testing
+    }
+}
+
+/// Returns the pre-computed signature for the test OutsideExecution.
+/// This signature was generated using the Python script with:
+/// - Contract address: 0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4
+/// - ETH address: 0xbF60187c5dFfA627249f1C3000A4168dbB9D7A1A
+/// - Domain: SN_MAIN, version 2, chainId 1
+/// - OutsideExecution: caller=ANY_CALLER, nonce=1, execute_after=1000, execute_before=3000,
+/// calls=[]
+///
+/// Format: [r_high, r_low, s_high, s_low, v, chain_id]
+pub fn get_outside_execution_signature() -> Array<felt252> {
+    array![
+        0xa97889fc4116632d7b0cbc136257ebdf, // r_high
+        0xf2e7384ae672ce351da295c704e0265a, // r_low
+        0x4b52469cfdda3614944d145122ee96ab, // s_high
+        0xca19b48f5b51afacc161928fe72cdf69, // s_low
+        28, // v
+        1 // chain_id (EVM)
+    ]
+}
+
+/// Returns an invalid signature for testing signature validation.
+pub fn get_invalid_outside_execution_signature() -> Array<felt252> {
+    array![
+        0x1234567890abcdef1234567890abcdef, // r_high (invalid)
+        0xfedcba0987654321fedcba0987654321, // r_low
+        0xabcdef1234567890abcdef1234567890, // s_high
+        0x0987654321fedcba0987654321fedcba, // s_low
+        27, // v
+        1 // chain_id
+    ]
+}
+
+/// Returns a signature with WRONG EVM chain ID (chain_id=2 instead of 1).
+/// This should fail signature validation because the domain separator is different.
+pub fn get_signature_wrong_evm_chain_id() -> Array<felt252> {
+    array![
+        0xe2aebdd44a9a03902eedb97065c2c279, // r_high
+        0xfcfd2f2325c7a0bc4af74252f84b10b, // r_low
+        0x73394d79eeda1d151b2facdcb2c9bd91, // s_high
+        0x69b65ab69e218022a936846ea383df37, // s_low
+        27, // v
+        2 // chain_id (WRONG - should be 1)
+    ]
+}
+
+/// Returns a signature with WRONG Starknet chain name (SN_SEPOLIA instead of SN_MAIN).
+/// This should fail signature validation because the domain separator is different.
+pub fn get_signature_wrong_sn_chain_name() -> Array<felt252> {
+    array![
+        0x4ac352e68f296423e4f628aa8f632a9b, // r_high
+        0x48b6738df23e337034763d57868522bf, // r_low
+        0x3a03669270b5ad9fa6817c7079724802, // s_high
+        0x8db208ab4e2089aa7dfaa5eee2864132, // s_low
+        28, // v
+        1 // chain_id
+    ]
+}
+
+/// Returns a signature with WRONG target contract address.
+/// This should fail signature validation because the domain separator is different.
+pub fn get_signature_wrong_contract_address() -> Array<felt252> {
+    array![
+        0x40b3c6efc80e9325f49b1a5c4a38f21c, // r_high
+        0xd42f46f2833f2388054df879ee09475e, // r_low
+        0x239eec5938ebaa0f4ce69664f17727ac, // s_high
+        0xd75388e53f1099eaae03b1ac49d0227a, // s_low
+        28, // v
+        1 // chain_id
+    ]
 }
