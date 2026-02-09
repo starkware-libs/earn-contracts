@@ -73,16 +73,9 @@ pub const EXECUTE_AFTER: u64 = 1000;
 pub const EXECUTE_BEFORE: u64 = 3000;
 pub const TEST_TIMESTAMP: u64 = 2000;
 pub const TEST_NONCE: felt252 = 1;
-pub const EVM_CHAIN_ID: felt252 = 1;
 
 /// ANY_CALLER constant from SNIP-9.
 pub const ANY_CALLER: felt252 = 'ANY_CALLER';
-
-/// Expected deployed contract address for signature validation.
-/// This is deterministic based on snforge's deployment.
-pub fn EXPECTED_CONTRACT_ADDRESS() -> ContractAddress {
-    0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4.try_into().unwrap()
-}
 
 /// Returns a test OutsideExecution with fixed values and empty calls.
 /// Using empty calls to avoid ENTRYPOINT_NOT_FOUND errors during testing.
