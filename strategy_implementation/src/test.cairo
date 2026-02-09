@@ -1,5 +1,12 @@
 use core::array::ArrayTrait;
 use core::num::traits::Zero;
+use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
+use snforge_std::TokenImpl;
+use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
+use starknet::ContractAddress;
+use starknet::eth_address::EthAddress;
+use starknet::secp256_trait::Signature;
+use starkware_utils_testing::test_utils::{assert_panic_with_felt_error, cheat_caller_address_once};
 use crate::interface::{
     IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait,
     IStrategyImplementationSafeDispatcher, IStrategyImplementationSafeDispatcherTrait,
@@ -14,22 +21,13 @@ use crate::test_utils::{
     assert_deposited_event, build_prefunded_apply_parameters_with_amount,
     build_prefunded_apply_parameters_with_token_address, build_prefunded_avnu,
     cheat_transfer_and_approve, deploy_4626_failure_mock, deploy_and_prefund_dummy_erc20_at,
-    deploy_dummy_avnu, deploy_dummy_avnu_failure, deploy_dummy_avnu_false,
-    deploy_erc4626_deposit_mint_mock, deploy_earn_reporter, deploy_mock_erc20_contract_at,
-    dummy_apply_parameters, dummy_apply_parameters_with_protocol, get_account_factory,
-    get_event_by_selector, get_position_owner, serialize_signature,
-    setup_strategy_implementation_test_env, validate_avnu_swap,
+    deploy_dummy_avnu, deploy_dummy_avnu_failure, deploy_dummy_avnu_false, deploy_earn_reporter,
+    deploy_erc4626_deposit_mint_mock, deploy_mock_erc20_contract_at, dummy_apply_parameters,
+    dummy_apply_parameters_with_protocol, get_account_factory, get_event_by_selector,
+    get_position_owner, serialize_signature, setup_strategy_implementation_test_env,
+    validate_avnu_swap,
 };
-use crate::utils::{
-    PROTOCOL_ENDUR, PROTOCOL_FORGE_YIELDS, PROTOCOL_NOON, PROTOCOL_TROVES,
-};
-use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-use snforge_std::TokenImpl;
-use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
-use starknet::ContractAddress;
-use starknet::eth_address::EthAddress;
-use starknet::secp256_trait::Signature;
-use starkware_utils_testing::test_utils::{assert_panic_with_felt_error, cheat_caller_address_once};
+use crate::utils::{PROTOCOL_ENDUR, PROTOCOL_FORGE_YIELDS, PROTOCOL_NOON, PROTOCOL_TROVES};
 
 
 #[test]

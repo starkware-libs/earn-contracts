@@ -1,18 +1,13 @@
+use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
 use snforge_std;
 use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
 use snforge_std::{ContractClassTrait, DeclareResultTrait};
-use starknet::get_contract_address;
 use starknet::secp256_trait::Signature;
 use starknet::syscalls::get_class_hash_at_syscall;
-use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
+use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait, get_contract_address};
 use starkware_utils_testing::test_utils::{assert_expected_event_emitted, cheat_caller_address_once};
-use crate::account_factory::AccountFactory::{
-    AccountClassHashChanged, AccountDeployed,
-};
-use crate::account_factory::{
-    IAccountFactoryDispatcher, IAccountFactoryDispatcherTrait,
-};
-use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
+use crate::account_factory::AccountFactory::{AccountClassHashChanged, AccountDeployed};
+use crate::account_factory::{IAccountFactoryDispatcher, IAccountFactoryDispatcherTrait};
 use crate::test_utils::{
     APP_GOVERNOR, declare_dummy_eth_address_contract, declare_second_dummy_eth_address_contract,
     eth_address_to_account, get_event_by_selector, get_event_by_selector_n,

@@ -1,4 +1,3 @@
-use crate::utils::{PRIMER_CLASS_HASH, compute_contract_address};
 use snforge_std::cheatcodes::events::Event;
 use snforge_std::{ContractClassTrait, DeclareResultTrait, TokenImpl};
 use starknet::eth_address::EthAddress;
@@ -6,6 +5,7 @@ use starknet::{ClassHash, ContractAddress, SyscallResultTrait};
 use starkware_utils_testing::test_utils::{
     set_account_as_app_governor, set_account_as_app_role_admin,
 };
+use crate::utils::{PRIMER_CLASS_HASH, compute_contract_address};
 
 pub(crate) fn APP_ROLE_ADMIN() -> ContractAddress {
     'APP_ROLE_ADMIN'.try_into().unwrap()

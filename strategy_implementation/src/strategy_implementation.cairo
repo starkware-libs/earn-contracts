@@ -4,22 +4,10 @@ pub mod StrategyImplementation {
     use account_factory::account_factory::{
         IAccountFactoryDispatcher, IAccountFactoryDispatcherTrait,
     };
-    use crate::avnu_interface::AvnuParameters;
-    use crate::interface::{
-        IStrategyImplementation, IStrategyImplementationSafeDispatcher,
-        IStrategyImplementationSafeDispatcherTrait,
-    };
-    use crate::known_addresses::MIDAS_RE7_BTC;
-    use crate::utils::{
-        IERC4626DepositDispatcher, IERC4626DepositDispatcherTrait, Strategy, StrategyTrait,
-        avnu_multi_route_swap, deserialize_signature, strategy_from_protocol_and_token,
-    };
     use core::num::traits::Zero;
     use core::panic_with_felt252;
     use core::traits::Into;
-    use earn_reporter::earn_reporter::{
-        IEarnReporterDispatcher, IEarnReporterDispatcherTrait,
-    };
+    use earn_reporter::earn_reporter::{IEarnReporterDispatcher, IEarnReporterDispatcherTrait};
     use openzeppelin::access::accesscontrol::AccessControlComponent;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -30,6 +18,16 @@ pub mod StrategyImplementation {
     use starkware_utils::components::replaceability::ReplaceabilityComponent;
     use starkware_utils::components::replaceability::ReplaceabilityComponent::InternalReplaceabilityTrait;
     use starkware_utils::components::roles::RolesComponent;
+    use crate::avnu_interface::AvnuParameters;
+    use crate::interface::{
+        IStrategyImplementation, IStrategyImplementationSafeDispatcher,
+        IStrategyImplementationSafeDispatcherTrait,
+    };
+    use crate::known_addresses::MIDAS_RE7_BTC;
+    use crate::utils::{
+        IERC4626DepositDispatcher, IERC4626DepositDispatcherTrait, Strategy, StrategyTrait,
+        avnu_multi_route_swap, deserialize_signature, strategy_from_protocol_and_token,
+    };
 
     component!(path: RolesComponent, storage: roles, event: RolesEvent);
     component!(path: AccessControlComponent, storage: accesscontrol, event: accesscontrolEvent);

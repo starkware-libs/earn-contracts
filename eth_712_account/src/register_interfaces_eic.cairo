@@ -5,9 +5,9 @@
 
 #[starknet::contract]
 pub mod RegisterInterfacesEIC {
-    use crate::interface::IEIC;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::introspection::src5::SRC5Component::InternalTrait as SRC5InternalTrait;
+    use crate::interface::IEIC;
 
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
 

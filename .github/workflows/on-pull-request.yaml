@@ -29,3 +29,6 @@ jobs:
 
       - name: run test and coverage
         run: scarb test -w --coverage
+
+      - name: verify primer class hash
+        run: ./scripts/verify_primer_class_hash.sh

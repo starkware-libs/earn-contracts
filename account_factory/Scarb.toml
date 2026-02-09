@@ -23,5 +23,10 @@ sierra = true
 build-external-contracts = ["contracts::primer::primer::Primer"]
 name = "account_factory_unittest"
 
+[profile.dev.cairo]
+unstable-add-statements-functions-debug-info = true
+unstable-add-statements-code-locations-debug-info = true
+inlining-strategy = "avoid"
+
 [scripts]
 test = "snforge test"

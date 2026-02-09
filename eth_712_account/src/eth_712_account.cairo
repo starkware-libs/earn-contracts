@@ -12,12 +12,6 @@
 
 #[starknet::contract(account)]
 pub mod StarknetEth712Account {
-    use crate::eth_712_utils::{
-        assert_valid_owner, extract_signature, get_outside_execution_hash, is_valid_signature,
-    };
-    use crate::interface::{
-        IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
-    };
     use core::num::traits::Zero;
     use openzeppelin::account::AccountComponent;
     use openzeppelin::account::extensions::src9::interface::ISRC9_V2_ID;
@@ -33,6 +27,10 @@ pub mod StarknetEth712Account {
     };
     use starknet::syscalls::replace_class_syscall;
     use starknet::{ClassHash, EthAddress, SyscallResultTrait};
+    use crate::eth_712_utils::{
+        assert_valid_owner, extract_signature, get_outside_execution_hash, is_valid_signature,
+    };
+    use crate::interface::{IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded};
 
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
     component!(path: AccountComponent, storage: account, event: AccountEvent);

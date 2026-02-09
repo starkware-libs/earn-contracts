@@ -22,12 +22,12 @@ pub trait IEarnReporter<TContractState> {
 
 #[starknet::contract]
 pub mod EarnReporter {
-    use crate::earn_reporter::IEarnReporter;
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::access::ownable::OwnableComponent::InternalTrait as OwnableInternalTrait;
     use openzeppelin_upgrades::UpgradeableComponent;
     use openzeppelin_upgrades::UpgradeableComponent::InternalTrait as UpgradeableInternalTrait;
     use starknet::{ClassHash, ContractAddress, EthAddress, get_caller_address};
+    use crate::earn_reporter::IEarnReporter;
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
