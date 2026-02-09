@@ -22,7 +22,7 @@ pub trait IEarnReporter<TContractState> {
 
 #[starknet::contract]
 pub mod EarnReporter {
-    use contracts::earn_reporter::earn_reporter::IEarnReporter;
+    use crate::earn_reporter::IEarnReporter;
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::access::ownable::OwnableComponent::InternalTrait as OwnableInternalTrait;
     use openzeppelin_upgrades::UpgradeableComponent;

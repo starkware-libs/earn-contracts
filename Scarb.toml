@@ -1,5 +1,5 @@
 [workspace]
-members = ["contracts"]
+members = ["contracts", "eth_712_account", "account_factory", "earn_reporter", "strategy_implementation"]
 
 [workspace.package]
 edition = "2024_07"

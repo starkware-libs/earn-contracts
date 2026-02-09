@@ -39,4 +39,3 @@ pub(crate) struct AvnuParameters {
     pub integrator_fee_recipient: ContractAddress,
     pub routes: Array<Route>,
 }
-

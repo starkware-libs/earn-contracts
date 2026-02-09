@@ -1,0 +1,22 @@
+[package]
+name = "earn_reporter"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+
+[dependencies]
+openzeppelin.workspace = true
+openzeppelin_upgrades.workspace = true
+starknet.workspace = true
+
+[dev-dependencies]
+assert_macros.workspace = true
+snforge_std.workspace = true
+starkware_utils_testing.workspace = true
+
+[[target.starknet-contract]]
+sierra = true
+
+[scripts]
+test = "snforge test"

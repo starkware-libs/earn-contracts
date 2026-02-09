@@ -1,25 +1,25 @@
 #[starknet::contract]
 pub mod StrategyImplementation {
     use RolesComponent::InternalTrait as RolesInternalTrait;
-    use contracts::account_factory::account_factory::{
+    use account_factory::account_factory::{
         IAccountFactoryDispatcher, IAccountFactoryDispatcherTrait,
     };
-    use contracts::earn_reporter::earn_reporter::{
-        IEarnReporterDispatcher, IEarnReporterDispatcherTrait,
-    };
-    use contracts::known_addresses::MIDAS_RE7_BTC;
-    use contracts::strategy_implementation::avnu_interface::AvnuParameters;
-    use contracts::strategy_implementation::interface::{
+    use crate::avnu_interface::AvnuParameters;
+    use crate::interface::{
         IStrategyImplementation, IStrategyImplementationSafeDispatcher,
         IStrategyImplementationSafeDispatcherTrait,
     };
-    use contracts::strategy_implementation::utils::{
+    use crate::known_addresses::MIDAS_RE7_BTC;
+    use crate::utils::{
         IERC4626DepositDispatcher, IERC4626DepositDispatcherTrait, Strategy, StrategyTrait,
         avnu_multi_route_swap, deserialize_signature, strategy_from_protocol_and_token,
     };
     use core::num::traits::Zero;
     use core::panic_with_felt252;
     use core::traits::Into;
+    use earn_reporter::earn_reporter::{
+        IEarnReporterDispatcher, IEarnReporterDispatcherTrait,
+    };
     use openzeppelin::access::accesscontrol::AccessControlComponent;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};

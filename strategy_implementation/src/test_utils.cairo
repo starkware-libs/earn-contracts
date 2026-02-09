@@ -1,12 +1,13 @@
-use contracts::known_addresses::{AVNU_EXCHANGE, MIDAS_RE7_BTC};
-use contracts::strategy_implementation::avnu_interface::{AvnuParameters, Route};
-use contracts::strategy_implementation::interface::{
+use account_factory::utils::compute_contract_address;
+use crate::avnu_interface::{AvnuParameters, Route};
+use crate::interface::{
     IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait,
 };
-use contracts::strategy_implementation::strategy_implementation::StrategyImplementation::{
+use crate::known_addresses::{AVNU_EXCHANGE, MIDAS_RE7_BTC};
+use crate::strategy_implementation::StrategyImplementation::{
     ApplyFailed, Deposited, MultiRouteSwap, PositionOwnerDeployed,
 };
-use contracts::strategy_implementation::utils::{
+use crate::utils::{
     PROTOCOL_AVNU, PROTOCOL_TROVES, Strategy, StrategyTrait, TokenTrait, deserialize_signature,
     strategy_from_protocol_and_token,
 };
@@ -21,10 +22,102 @@ use starkware_utils_testing::test_utils::{
     assert_expected_event_emitted, cheat_caller_address_once, set_account_as_app_governor,
     set_account_as_app_role_admin,
 };
-use crate::test_utils::{
-    APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMIN, eth_address_to_account, get_event_by_selector,
-    setup_account_factory_test_env,
-};
+
+
+/// The Primer class hash used in tests. This must match what snforge produces when
+/// compiling the Primer contract.
+pub(crate) const PRIMER_CLASS_HASH: starknet::ClassHash =
+    0x0279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
+    .try_into()
+    .unwrap();
+
+// Test constants - mirrored from account_factory for use in strategy_implementation tests.
+pub(crate) fn APP_ROLE_ADMIN() -> ContractAddress {
+    'APP_ROLE_ADMIN'.try_into().unwrap()
+}
+
+pub(crate) fn APP_GOVERNOR() -> ContractAddress {
+    'APP_GOVERNOR'.try_into().unwrap()
+}
+
+pub(crate) fn GOVERNANCE_ADMIN() -> ContractAddress {
+    'GOVERNANCE_ADMIN'.try_into().unwrap()
+}
+
+/// Mirrors AccountFactory.eth_address_to_account for tests.
+pub(crate) fn eth_address_to_account(
+    account_factory: ContractAddress, eth_address: EthAddress,
+) -> ContractAddress {
+    compute_contract_address(
+        salt: eth_address.into(),
+        class_hash: PRIMER_CLASS_HASH.into(),
+        constructor_calldata: array![].span(),
+        deployer_address: account_factory.into(),
+    )
+}
+
+/// Declare the `Primer` contract and return its class hash.
+pub(crate) fn declare_primer_contract() -> starknet::ClassHash {
+    *snforge_std::declare("Primer").unwrap_syscall().contract_class().class_hash
+}
+
+fn set_account_factory_default_roles(account_factory: ContractAddress) {
+    set_account_as_app_role_admin(
+        contract: account_factory, account: APP_ROLE_ADMIN(), governance_admin: GOVERNANCE_ADMIN(),
+    );
+    set_account_as_app_governor(
+        contract: account_factory, account: APP_GOVERNOR(), app_role_admin: APP_ROLE_ADMIN(),
+    );
+}
+
+/// Declare the `DummyEthAddressContract` contract and return its class hash.
+pub(crate) fn declare_dummy_eth_address_contract() -> starknet::ClassHash {
+    *snforge_std::declare("DummyEthAddressContract").unwrap_syscall().contract_class().class_hash
+}
+
+/// Builds the constructor calldata array for AccountFactory.
+pub(crate) fn account_factory_constructor_calldata() -> Array<felt252> {
+    let governance_admin: ContractAddress = GOVERNANCE_ADMIN();
+    let upgrade_delay: u64 = 0;
+    let account_class_hash: starknet::ClassHash = declare_dummy_eth_address_contract();
+    let mut calldata: Array<felt252> = array![];
+    Serde::serialize(@governance_admin, ref calldata);
+    Serde::serialize(@upgrade_delay, ref calldata);
+    Serde::serialize(@account_class_hash, ref calldata);
+    calldata
+}
+
+/// Sets up the AccountFactory test environment:
+/// - deploys the `AccountFactory` contract,
+/// - sets default roles,
+/// - declares the `Primer` contract so its class hash is available.
+pub(crate) fn setup_account_factory_test_env() -> ContractAddress {
+    let calldata = account_factory_constructor_calldata();
+    let account_factory_contract = snforge_std::declare("AccountFactory")
+        .unwrap_syscall()
+        .contract_class();
+    let (account_factory_contract_address, _) = account_factory_contract
+        .deploy(@calldata)
+        .unwrap_syscall();
+    set_account_factory_default_roles(account_factory_contract_address);
+    declare_primer_contract();
+    account_factory_contract_address
+}
+
+// Minimal no-op contract for tests: stores an EthAddress passed at construction.
+#[starknet::contract]
+pub mod DummyEthAddressContract {
+    use starknet::eth_address::EthAddress;
+    use starknet::secp256_trait::Signature;
+    #[storage]
+    struct Storage {}
+
+
+    #[external(v0)]
+    fn initialize(ref self: ContractState, eth_address: EthAddress, signature: Signature) {
+        return;
+    }
+}
 
 
 #[derive(Drop, Copy)]
@@ -32,6 +125,48 @@ pub(crate) struct ApplyParameters {
     pub token_in: ContractAddress,
     pub amount: u256,
     pub parameters: Span<felt252>,
+}
+
+/// Returns the index of the nth event whose first key equals the given selector.
+pub(crate) fn find_event_index_by_selector(
+    events: Span<(ContractAddress, Event)>, selector: felt252, n: usize,
+) -> Option<usize> {
+    let mut i = 0_usize;
+    let mut seen = 0_usize;
+    for (_, ev) in events {
+        if ev.keys.len() > 0 && *ev.keys.at(0) == selector {
+            if seen == n {
+                return Option::Some(i);
+            }
+            seen += 1;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Returns a cloned copy of the first event emitted with the given selector (if any).
+pub(crate) fn get_event_by_selector(
+    events: Span<(ContractAddress, Event)>, selector: felt252,
+) -> Option<@(ContractAddress, Event)> {
+    match find_event_index_by_selector(:events, :selector, n: 0) {
+        Option::Some(i) => {
+            let (from, ev) = events.at(i);
+            Option::Some(@(*from, ev.clone()))
+        },
+        None => None,
+    }
+}
+
+/// Deploy the EarnReporter contract and return its address.
+pub(crate) fn deploy_earn_reporter(owner: ContractAddress) -> ContractAddress {
+    let earn_reporter_class = snforge_std::declare("EarnReporter")
+        .unwrap_syscall()
+        .contract_class();
+    let (earn_reporter_addr, _) = earn_reporter_class
+        .deploy(@array![owner.into()])
+        .unwrap_syscall();
+    earn_reporter_addr
 }
 
 /// Sets default StrategyImplementation roles using testing helpers and constants.
@@ -578,7 +713,7 @@ pub trait IERC4626DepositMintMock<TContractState> {
 
 #[starknet::contract]
 pub mod ERC4626DepositMintMock {
-    use contracts::strategy_implementation::test_utils::IERC4626DepositMintMock;
+    use crate::test_utils::IERC4626DepositMintMock;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::token::erc20::{DefaultConfig, ERC20Component, ERC20HooksEmptyImpl};
     use starknet::ContractAddress;
@@ -694,7 +829,7 @@ pub(crate) fn deploy_4626_failure_mock(address_to_deploy_at: ContractAddress) {
 // -----------------------------------------------------------------------------
 #[starknet::contract]
 pub mod DummyAvnu {
-    use contracts::strategy_implementation::avnu_interface::AvnuParameters;
+    use crate::avnu_interface::AvnuParameters;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     #[storage]
@@ -731,7 +866,7 @@ pub(crate) fn deploy_dummy_avnu(address_to_deploy_at: ContractAddress) {
 // -----------------------------------------------------------------------------
 #[starknet::contract]
 pub mod DummyAvnuFailure {
-    use contracts::strategy_implementation::avnu_interface::AvnuParameters;
+    use crate::avnu_interface::AvnuParameters;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     #[storage]
@@ -767,7 +902,7 @@ pub(crate) fn deploy_dummy_avnu_failure(address_to_deploy_at: ContractAddress) {
 // -----------------------------------------------------------------------------
 #[starknet::contract]
 pub mod DummyAvnuFalse {
-    use contracts::strategy_implementation::avnu_interface::AvnuParameters;
+    use crate::avnu_interface::AvnuParameters;
     #[storage]
     struct Storage {}
 

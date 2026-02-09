@@ -1,9 +1,8 @@
-use contracts::account_factory::utils::{PRIMER_CLASS_HASH, compute_contract_address};
+use crate::utils::{PRIMER_CLASS_HASH, compute_contract_address};
 use snforge_std::cheatcodes::events::Event;
 use snforge_std::{ContractClassTrait, DeclareResultTrait, TokenImpl};
 use starknet::eth_address::EthAddress;
 use starknet::{ClassHash, ContractAddress, SyscallResultTrait};
-use starkware_utils::constants::SYMBOL;
 use starkware_utils_testing::test_utils::{
     set_account_as_app_governor, set_account_as_app_role_admin,
 };
@@ -78,22 +77,6 @@ pub(crate) fn eth_address_to_account(
         constructor_calldata: array![].span(),
         deployer_address: account_factory.into(),
     )
-}
-
-//TODO - Move to starkware_utils_testing
-pub(crate) fn deploy_mock_erc20_contract(
-    initial_supply: u256, owner_address: ContractAddress, name: ByteArray,
-) -> ContractAddress {
-    let mut calldata = ArrayTrait::new();
-    name.serialize(ref calldata);
-    SYMBOL().serialize(ref calldata);
-    initial_supply.serialize(ref calldata);
-    owner_address.serialize(ref calldata);
-    let erc20_contract = snforge_std::declare("DualCaseERC20Mock")
-        .unwrap_syscall()
-        .contract_class();
-    let (token_address, _) = erc20_contract.deploy(@calldata).unwrap_syscall();
-    token_address
 }
 
 /// Declare the `Primer` contract and return its class hash.
@@ -189,15 +172,4 @@ pub(crate) fn declare_second_dummy_eth_address_contract() -> ClassHash {
         .unwrap_syscall()
         .contract_class()
         .class_hash
-}
-
-/// Deploy the EarnReporter contract and return its address.
-pub(crate) fn deploy_earn_reporter(owner: ContractAddress) -> ContractAddress {
-    let earn_reporter_class = snforge_std::declare("EarnReporter")
-        .unwrap_syscall()
-        .contract_class();
-    let (earn_reporter_addr, _) = earn_reporter_class
-        .deploy(@array![owner.into()])
-        .unwrap_syscall();
-    earn_reporter_addr
 }

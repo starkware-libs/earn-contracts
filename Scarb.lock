@@ -2,14 +2,36 @@
 version = 1
 
 [[package]]
+name = "account_factory"
+version = "0.1.0"
+dependencies = [
+ "contracts",
+ "openzeppelin",
+ "snforge_std",
+ "starkware_utils",
+ "starkware_utils_testing",
+]
+
+[[package]]
 name = "contracts"
+version = "0.1.0"
+
+[[package]]
+name = "earn_reporter"
 version = "0.1.0"
 dependencies = [
  "openzeppelin",
  "openzeppelin_upgrades",
  "snforge_std",
- "starkware_utils",
  "starkware_utils_testing",
+]
+
+[[package]]
+name = "eth_712_account"
+version = "0.1.0"
+dependencies = [
+ "openzeppelin",
+ "snforge_std",
 ]
 
 [[package]]
@@ -161,4 +183,17 @@ dependencies = [
  "openzeppelin",
  "snforge_std",
  "starkware_utils",
+]
+
+[[package]]
+name = "strategy_implementation"
+version = "0.1.0"
+dependencies = [
+ "account_factory",
+ "contracts",
+ "earn_reporter",
+ "openzeppelin",
+ "snforge_std",
+ "starkware_utils",
+ "starkware_utils_testing",
 ]

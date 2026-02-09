@@ -1,12 +1,15 @@
 [package]
-name = "contracts"
+name = "eth_712_account"
 edition.workspace = true
 version.workspace = true
 
-[lib]
-
 [dependencies]
+openzeppelin.workspace = true
 starknet.workspace = true
+
+[dev-dependencies]
+assert_macros.workspace = true
+snforge_std.workspace = true
 
 [[target.starknet-contract]]
 sierra = true

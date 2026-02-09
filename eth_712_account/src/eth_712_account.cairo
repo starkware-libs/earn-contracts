@@ -12,10 +12,10 @@
 
 #[starknet::contract(account)]
 pub mod StarknetEth712Account {
-    use contracts::eth_712_account::eth_712_utils::{
+    use crate::eth_712_utils::{
         assert_valid_owner, extract_signature, get_outside_execution_hash, is_valid_signature,
     };
-    use contracts::eth_712_account::interface::{
+    use crate::interface::{
         IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
     };
     use core::num::traits::Zero;

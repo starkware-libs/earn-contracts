@@ -1,0 +1,32 @@
+[package]
+name = "strategy_implementation"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+account_factory = { path = "../account_factory" }
+contracts = { path = "../contracts" }
+earn_reporter = { path = "../earn_reporter" }
+openzeppelin.workspace = true
+starknet.workspace = true
+starkware_utils.workspace = true
+
+[dev-dependencies]
+assert_macros.workspace = true
+snforge_std.workspace = true
+starkware_utils_testing.workspace = true
+
+[[target.starknet-contract]]
+sierra = true
+
+[[test]]
+build-external-contracts = [
+    "starkware_utils::erc20::erc20_mocks::DualCaseERC20Mock",
+    "account_factory::account_factory::AccountFactory",
+    "contracts::primer::primer::Primer",
+    "earn_reporter::earn_reporter::EarnReporter",
+]
+name = "strategy_implementation_unittest"
+
+[scripts]
+test = "snforge test"

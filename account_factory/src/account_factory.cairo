@@ -13,12 +13,12 @@ pub trait IAccountFactory<TContractState> {
 #[starknet::contract]
 pub mod AccountFactory {
     use RolesComponent::InternalTrait as RolesInternalTrait;
-    use contracts::account_factory::account_factory::IAccountFactory;
-    use contracts::account_factory::utils::{
+    use crate::account_factory::IAccountFactory;
+    use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
+    use crate::utils::{
         IEthAccountInitializerDispatcher, IEthAccountInitializerDispatcherTrait, PRIMER_CLASS_HASH,
         eth_address_to_account, is_deployed,
     };
-    use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
     use core::traits::Into;
     use openzeppelin::access::accesscontrol::AccessControlComponent;
     use openzeppelin::introspection::src5::SRC5Component;

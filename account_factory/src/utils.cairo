@@ -8,7 +8,7 @@ pub(crate) const CONTRACT_ADDRESS_SALT: felt252 = 0;
 
 #[cfg(target: "test")]
 pub(crate) const PRIMER_CLASS_HASH: ClassHash =
-    0x279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
+    0x0279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
     .try_into()
     .unwrap();
 
@@ -72,4 +72,3 @@ pub fn compute_contract_address(
 pub fn is_deployed(addr: ContractAddress) -> bool {
     get_class_hash_at_syscall(addr).unwrap_syscall() != Zero::zero()
 }
-

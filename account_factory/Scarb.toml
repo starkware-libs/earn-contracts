@@ -1,0 +1,27 @@
+[package]
+name = "account_factory"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+
+[dependencies]
+contracts = { path = "../contracts" }
+openzeppelin.workspace = true
+starknet.workspace = true
+starkware_utils.workspace = true
+
+[dev-dependencies]
+assert_macros.workspace = true
+snforge_std.workspace = true
+starkware_utils_testing.workspace = true
+
+[[target.starknet-contract]]
+sierra = true
+
+[[test]]
+build-external-contracts = ["contracts::primer::primer::Primer"]
+name = "account_factory_unittest"
+
+[scripts]
+test = "snforge test"
