@@ -1,4 +1,9 @@
-use account_factory::utils::compute_contract_address;
+// NOTE: Some test utilities (APP_GOVERNOR, find_event_index_by_selector, DummyEthAddressContract,
+// etc.) are duplicated across packages. This is intentional to keep package dependencies simple
+// and avoid circular dependencies. Consider consolidating into a shared test utils package if
+// the duplication becomes burdensome.
+
+use account_factory::utils::{PRIMER_CLASS_HASH, compute_contract_address};
 use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::cheatcodes::events::Event;
 use snforge_std::{ContractClassTrait, DeclareResultTrait, TokenImpl};
@@ -21,13 +26,6 @@ use crate::utils::{
     strategy_from_protocol_and_token,
 };
 
-
-/// The Primer class hash used in tests. This must match what snforge produces when
-/// compiling the Primer contract.
-pub(crate) const PRIMER_CLASS_HASH: starknet::ClassHash =
-    0x0279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
-    .try_into()
-    .unwrap();
 
 // Test constants - mirrored from account_factory for use in strategy_implementation tests.
 pub(crate) fn APP_ROLE_ADMIN() -> ContractAddress {

@@ -7,14 +7,14 @@ use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait, get_c
 pub(crate) const CONTRACT_ADDRESS_SALT: felt252 = 0;
 
 #[cfg(target: "test")]
-pub(crate) const PRIMER_CLASS_HASH: ClassHash =
+pub const PRIMER_CLASS_HASH: ClassHash =
     0x0279a9bb18604f4ae57633373d56656063203f236cc5aeceea8f2cf40f6336d7
     .try_into()
     .unwrap();
 
 #[cfg(not(target: "test"))]
-pub(crate) const PRIMER_CLASS_HASH: ClassHash =
-    0x123e6bc1c14ae9934e933d3f64916a6116dd6b036a922b2b1f0815e0d1d300
+pub const PRIMER_CLASS_HASH: ClassHash =
+    0x00123e6bc1c14ae9934e933d3f64916a6116dd6b036a922b2b1f0815e0d1d300
     .try_into()
     .unwrap();
 
@@ -26,6 +26,7 @@ pub(crate) trait IEthAccountInitializer<TContractState> {
 }
 
 /// Computes the Pedersen hash on the elements of the span using a hash state.
+// TODO: Move this function to a shared utils package to avoid duplication across packages.
 pub fn compute_pedersen_on_elements(data: Span<felt252>) -> felt252 {
     let mut state = PedersenTrait::new(0);
     for value in data {

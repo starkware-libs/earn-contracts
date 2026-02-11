@@ -1,3 +1,8 @@
+// NOTE: Some test utilities (APP_GOVERNOR, find_event_index_by_selector, DummyEthAddressContract,
+// etc.) are duplicated across packages. This is intentional to keep package dependencies simple
+// and avoid circular dependencies. Consider consolidating into a shared test utils package if
+// the duplication becomes burdensome.
+
 use snforge_std::cheatcodes::events::Event;
 use snforge_std::{ContractClassTrait, DeclareResultTrait, TokenImpl};
 use starknet::eth_address::EthAddress;
