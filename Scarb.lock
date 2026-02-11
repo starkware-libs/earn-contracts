@@ -15,6 +15,10 @@ dependencies = [
 [[package]]
 name = "contracts"
 version = "0.1.0"
+dependencies = [
+ "snforge_std",
+ "starkware_utils_testing",
+]
 
 [[package]]
 name = "earn_reporter"
