@@ -7,15 +7,15 @@ use starknet::ContractAddress;
 use starknet::eth_address::EthAddress;
 use starknet::secp256_trait::Signature;
 use starkware_utils_testing::test_utils::{assert_panic_with_felt_error, cheat_caller_address_once};
-use crate::interface::{
+use strategy_implementation::interface::{
     IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait,
     IStrategyImplementationSafeDispatcher, IStrategyImplementationSafeDispatcherTrait,
 };
-use crate::known_addresses::{
+use strategy_implementation::known_addresses::{
     AVNU_EXCHANGE, ENDUR_TBTC, ENDUR_WBTC, FORGE_YIELDS_WBTC, LBTC, NOON_WBTC, TBTC, TROVES_TBTC,
     WBTC,
 };
-use crate::test_utils::{
+use strategy_implementation::test_utils::{
     APP_GOVERNOR, ApplyParameters, IERC4626DepositMintMockDispatcher,
     IERC4626DepositMintMockDispatcherTrait, apply, assert_apply_failed_with_refund,
     assert_deposited_event, build_prefunded_apply_parameters_with_amount,
@@ -27,7 +27,9 @@ use crate::test_utils::{
     get_position_owner, serialize_signature, setup_strategy_implementation_test_env,
     validate_avnu_swap,
 };
-use crate::utils::{PROTOCOL_ENDUR, PROTOCOL_FORGE_YIELDS, PROTOCOL_NOON, PROTOCOL_TROVES};
+use strategy_implementation::utils::{
+    PROTOCOL_ENDUR, PROTOCOL_FORGE_YIELDS, PROTOCOL_NOON, PROTOCOL_TROVES,
+};
 
 
 #[test]

@@ -13,6 +13,11 @@ pub trait IAccountFactory<TContractState> {
 #[starknet::contract]
 pub mod AccountFactory {
     use RolesComponent::InternalTrait as RolesInternalTrait;
+    use account_factory::account_factory::IAccountFactory;
+    use account_factory::utils::{
+        IEthAccountInitializerDispatcher, IEthAccountInitializerDispatcherTrait, PRIMER_CLASS_HASH,
+        eth_address_to_account, is_deployed,
+    };
     use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
     use core::traits::Into;
     use openzeppelin::access::accesscontrol::AccessControlComponent;
@@ -24,11 +29,6 @@ pub mod AccountFactory {
     use starkware_utils::components::replaceability::ReplaceabilityComponent;
     use starkware_utils::components::replaceability::ReplaceabilityComponent::InternalReplaceabilityTrait;
     use starkware_utils::components::roles::RolesComponent;
-    use crate::account_factory::IAccountFactory;
-    use crate::utils::{
-        IEthAccountInitializerDispatcher, IEthAccountInitializerDispatcherTrait, PRIMER_CLASS_HASH,
-        eth_address_to_account, is_deployed,
-    };
     component!(path: RolesComponent, storage: roles, event: RolesEvent);
     component!(path: AccessControlComponent, storage: accesscontrol, event: accesscontrolEvent);
     component!(path: SRC5Component, storage: src5, event: src5Event);

@@ -5,8 +5,8 @@ use starknet::{ClassHash, ContractAddress, SyscallResultTrait};
 use starkware_utils_testing::test_utils::{
     set_account_as_app_governor, set_account_as_app_role_admin,
 };
-use crate::constants::{APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMIN};
-use crate::dummy_contracts::declare_dummy_eth_address_contract;
+use testing_utils::constants::{APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMIN};
+use testing_utils::dummy_contracts::declare_dummy_eth_address_contract;
 
 /// Mirrors AccountFactory.eth_address_to_account for tests, using the
 /// PRIMER_CLASS_HASH and the account factory address as the deployer address.

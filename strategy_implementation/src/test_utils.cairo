@@ -13,6 +13,18 @@ use starkware_utils_testing::test_utils::{
     assert_expected_event_emitted, cheat_caller_address_once, set_account_as_app_governor,
     set_account_as_app_role_admin,
 };
+use strategy_implementation::avnu_interface::{AvnuParameters, Route};
+use strategy_implementation::interface::{
+    IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait,
+};
+use strategy_implementation::known_addresses::{AVNU_EXCHANGE, MIDAS_RE7_BTC};
+use strategy_implementation::strategy_implementation::StrategyImplementation::{
+    ApplyFailed, Deposited, MultiRouteSwap, PositionOwnerDeployed,
+};
+use strategy_implementation::utils::{
+    PROTOCOL_AVNU, PROTOCOL_TROVES, Strategy, StrategyTrait, TokenTrait, deserialize_signature,
+    strategy_from_protocol_and_token,
+};
 pub use testing_utils::account_factory_utils::{
     declare_primer_contract, eth_address_to_account, setup_account_factory_test_env,
 };
@@ -20,16 +32,6 @@ pub use testing_utils::constants::{APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMI
 pub use testing_utils::dummy_contracts::declare_dummy_eth_address_contract;
 pub use testing_utils::event_helpers::{
     find_event_index_by_selector, get_event_by_selector, get_event_by_selector_n,
-};
-use crate::avnu_interface::{AvnuParameters, Route};
-use crate::interface::{IStrategyImplementationDispatcher, IStrategyImplementationDispatcherTrait};
-use crate::known_addresses::{AVNU_EXCHANGE, MIDAS_RE7_BTC};
-use crate::strategy_implementation::StrategyImplementation::{
-    ApplyFailed, Deposited, MultiRouteSwap, PositionOwnerDeployed,
-};
-use crate::utils::{
-    PROTOCOL_AVNU, PROTOCOL_TROVES, Strategy, StrategyTrait, TokenTrait, deserialize_signature,
-    strategy_from_protocol_and_token,
 };
 
 
@@ -588,7 +590,7 @@ pub mod ERC4626DepositMintMock {
     use openzeppelin::token::erc20::{DefaultConfig, ERC20Component, ERC20HooksEmptyImpl};
     use starknet::ContractAddress;
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
-    use crate::test_utils::IERC4626DepositMintMock;
+    use strategy_implementation::test_utils::IERC4626DepositMintMock;
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
 
@@ -701,7 +703,7 @@ pub(crate) fn deploy_4626_failure_mock(address_to_deploy_at: ContractAddress) {
 #[starknet::contract]
 pub mod DummyAvnu {
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use crate::avnu_interface::AvnuParameters;
+    use strategy_implementation::avnu_interface::AvnuParameters;
 
     #[storage]
     struct Storage {}
@@ -738,7 +740,7 @@ pub(crate) fn deploy_dummy_avnu(address_to_deploy_at: ContractAddress) {
 #[starknet::contract]
 pub mod DummyAvnuFailure {
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use crate::avnu_interface::AvnuParameters;
+    use strategy_implementation::avnu_interface::AvnuParameters;
 
     #[storage]
     struct Storage {}
@@ -773,7 +775,7 @@ pub(crate) fn deploy_dummy_avnu_failure(address_to_deploy_at: ContractAddress) {
 // -----------------------------------------------------------------------------
 #[starknet::contract]
 pub mod DummyAvnuFalse {
-    use crate::avnu_interface::AvnuParameters;
+    use strategy_implementation::avnu_interface::AvnuParameters;
     #[storage]
     struct Storage {}
 
