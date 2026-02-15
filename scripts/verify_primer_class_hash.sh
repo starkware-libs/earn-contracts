@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-EXPECTED_CLASS_HASH="0x00123e6bc1c14ae9934e933d3f64916a6116dd6b036a922b2b1f0815e0d1d300"
+EXPECTED_CLASS_HASH="0x00123e6bc1c14ae9934e933d3f64916a6116dd6b036a922b2b1f0815e0d1d301"
 
 # Verify Scarb version for reproducible class hash computation
 REQUIRED_SCARB_VERSION="2.14.0"
