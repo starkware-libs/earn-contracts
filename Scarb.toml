@@ -9,7 +9,6 @@ version = "0.1.0"
 assert_macros = "2.12.3"
 openzeppelin = "2.0.0"
 openzeppelin_upgrades = "2.0.0"
-openzeppelin_testing = "3.0.0"
 snforge_std = "0.54.1"
 starknet = "2.12.2"
 starkware_utils = {git = "https://github.com/starkware-libs/starkware-starknet-utils", rev = "9aa2ec0b1dc1bc54bc01705cb2d4f5227e28e1e7"}
