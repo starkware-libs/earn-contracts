@@ -10,6 +10,7 @@ dependencies = [
  "snforge_std",
  "starkware_utils",
  "starkware_utils_testing",
+ "testing_utils",
 ]
 
 [[package]]
@@ -28,6 +29,7 @@ dependencies = [
  "openzeppelin_upgrades",
  "snforge_std",
  "starkware_utils_testing",
+ "testing_utils",
 ]
 
 [[package]]
@@ -196,6 +198,19 @@ dependencies = [
  "account_factory",
  "contracts",
  "earn_reporter",
+ "openzeppelin",
+ "snforge_std",
+ "starkware_utils",
+ "starkware_utils_testing",
+ "testing_utils",
+]
+
+[[package]]
+name = "testing_utils"
+version = "0.1.0"
+dependencies = [
+ "account_factory",
+ "contracts",
  "openzeppelin",
  "snforge_std",
  "starkware_utils",

@@ -15,6 +15,7 @@ starkware_utils.workspace = true
 assert_macros.workspace = true
 snforge_std.workspace = true
 starkware_utils_testing.workspace = true
+testing_utils = { path = "../testing_utils" }
 
 [[target.starknet-contract]]
 sierra = true
@@ -25,6 +26,7 @@ build-external-contracts = [
     "account_factory::account_factory::AccountFactory",
     "contracts::primer::primer::Primer",
     "earn_reporter::earn_reporter::EarnReporter",
+    "testing_utils::dummy_contracts::DummyEthAddressContract",
 ]
 name = "strategy_implementation_unittest"
 

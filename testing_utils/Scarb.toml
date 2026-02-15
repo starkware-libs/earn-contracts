@@ -1,34 +1,23 @@
 [package]
-name = "earn_reporter"
+name = "testing_utils"
 edition.workspace = true
 version.workspace = true
 
 [lib]
 
 [dependencies]
+account_factory = { path = "../account_factory" }
+contracts = { path = "../contracts" }
 openzeppelin.workspace = true
-openzeppelin_upgrades.workspace = true
-starknet.workspace = true
-
-[dev-dependencies]
-assert_macros.workspace = true
 snforge_std.workspace = true
+starknet.workspace = true
+starkware_utils.workspace = true
 starkware_utils_testing.workspace = true
-testing_utils = { path = "../testing_utils" }
 
 [[target.starknet-contract]]
 sierra = true
-
-[[test]]
-build-external-contracts = [
-    "testing_utils::dummy_contracts::DummyEthAddressContract",
-]
-name = "earn_reporter_unittest"
 
 [profile.dev.cairo]
 unstable-add-statements-functions-debug-info = true
 unstable-add-statements-code-locations-debug-info = true
 inlining-strategy = "avoid"
-
-[scripts]
-test = "snforge test"
