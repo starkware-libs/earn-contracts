@@ -1,7 +1,3 @@
-// Re-export shared testing utilities from the testing_utils package.
-
-// Package-specific helpers
-
 use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 use snforge_std::cheatcodes::events::Event;
 use snforge_std::{ContractClassTrait, DeclareResultTrait, TokenImpl};
@@ -25,14 +21,9 @@ use strategy_implementation::utils::{
     PROTOCOL_AVNU, PROTOCOL_TROVES, Strategy, StrategyTrait, TokenTrait, deserialize_signature,
     strategy_from_protocol_and_token,
 };
-pub use testing_utils::account_factory_utils::{
-    declare_primer_contract, eth_address_to_account, setup_account_factory_test_env,
-};
-pub use testing_utils::constants::{APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMIN};
-pub use testing_utils::dummy_contracts::declare_dummy_eth_address_contract;
-pub use testing_utils::event_helpers::{
-    find_event_index_by_selector, get_event_by_selector, get_event_by_selector_n,
-};
+use testing_utils::account_factory_utils::{eth_address_to_account, setup_account_factory_test_env};
+use testing_utils::constants::{APP_GOVERNOR, APP_ROLE_ADMIN, GOVERNANCE_ADMIN};
+use testing_utils::event_helpers::get_event_by_selector;
 
 
 #[derive(Drop, Copy)]

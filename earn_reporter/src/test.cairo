@@ -1,13 +1,13 @@
 use earn_reporter::earn_reporter::EarnReporter::OrderCreated;
 use earn_reporter::earn_reporter::{IEarnReporterDispatcher, IEarnReporterDispatcherTrait};
-use earn_reporter::test_utils::{
-    declare_dummy_eth_address_contract, deploy_earn_reporter, get_event_by_selector,
-};
+use earn_reporter::test_utils::deploy_earn_reporter;
 use openzeppelin::access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use snforge_std::cheatcodes::events::{EventSpyTrait, EventsFilterTrait};
 use starknet::syscalls::get_class_hash_at_syscall;
 use starknet::{ContractAddress, SyscallResultTrait, get_contract_address};
 use starkware_utils_testing::test_utils::{assert_expected_event_emitted, cheat_caller_address_once};
+use testing_utils::dummy_contracts::declare_dummy_eth_address_contract;
+use testing_utils::event_helpers::get_event_by_selector;
 
 fn default_order_created_event() -> OrderCreated {
     OrderCreated {
