@@ -1,12 +1,14 @@
 [package]
 name = "contracts"
-edition.workspace = true
-version.workspace = true
+# Pinned to ensure Primer class hash stability - do not change, is it would break PRIMER_CLASS_HASH
+edition = "2024_07"
+version = "0.1.0"
 
 [lib]
 
 [dependencies]
-starknet.workspace = true
+# Pinned to ensure Primer class hash stability - do not change, is it would break PRIMER_CLASS_HASH
+starknet = "2.12.2"
 
 [dev-dependencies]
 snforge_std.workspace = true
@@ -19,6 +21,10 @@ sierra = true
 unstable-add-statements-functions-debug-info = true
 unstable-add-statements-code-locations-debug-info = true
 inlining-strategy = "avoid"
+
+[profile.release.cairo]
+# Explicit release settings for deterministic Primer class hash
+sierra-replace-ids = true
 
 [scripts]
 test = "snforge test"
