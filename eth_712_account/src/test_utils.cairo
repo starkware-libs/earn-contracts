@@ -44,17 +44,13 @@ pub fn get_invalid_signature() -> Signature {
 }
 
 /// Declare and deploy the StarknetEth712Account contract.
-pub fn deploy_eth712_account() -> ContractAddress {
+/// Returns the contract address and the class hash.
+pub fn deploy_eth712_account() -> (ContractAddress, ClassHash) {
     let contract_class = snforge_std::declare("StarknetEth712Account")
         .unwrap_syscall()
         .contract_class();
     let (contract_address, _) = contract_class.deploy(@array![]).unwrap_syscall();
-    contract_address
-}
-
-/// Declare the StarknetEth712Account contract and return its class hash.
-pub fn declare_eth712_account() -> ClassHash {
-    *snforge_std::declare("StarknetEth712Account").unwrap_syscall().contract_class().class_hash
+    (contract_address, *contract_class.class_hash)
 }
 
 /// Declare the RegisterInterfacesEIC contract and return its class hash.

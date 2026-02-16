@@ -79,6 +79,7 @@ pub mod StarknetEth712Account {
             // Register Account interface (ISRC6) so that we can receive 721/1155 tokens.
             self.src5.register_interface(ISRC6_ID);
         }
+
         fn upgrade(
             ref self: ContractState,
             new_class_hash: ClassHash,
