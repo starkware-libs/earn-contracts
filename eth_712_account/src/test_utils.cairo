@@ -1,5 +1,11 @@
+use core::serde::Serde;
+use eth_712_account::interface::{IAccount712AdminDispatcher, IAccount712AdminDispatcherTrait};
 use openzeppelin::account::extensions::src9::OutsideExecution;
-use snforge_std::{ContractClassTrait, DeclareResultTrait};
+use openzeppelin::account::extensions::src9::interface::ISRC9_V2Dispatcher;
+use openzeppelin::token::erc20::interface::IERC20Dispatcher;
+use snforge_std::cheatcodes::CheatSpan;
+use snforge_std::{ContractClassTrait, DeclareResultTrait, cheat_block_timestamp, cheat_chain_id};
+use starknet::account::Call;
 use starknet::secp256_trait::Signature;
 use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
 
@@ -60,6 +66,35 @@ pub fn declare_register_interfaces_eic() -> ClassHash {
 }
 
 // ================================
+// Execute-from-outside (EFO) test setup helpers
+// ================================
+
+/// Setup an initialized account with configurable timestamp for EFO tests.
+/// Returns src9_dispatcher (use src9.contract_address if account address is needed).
+pub fn setup_efo_test_with_timestamp(timestamp: u64) -> ISRC9_V2Dispatcher {
+    let (account_address, _) = deploy_eth712_account();
+    let account_contract = IAccount712AdminDispatcher { contract_address: account_address };
+    account_contract.initialize(TEST_ETH_ADDRESS(), get_ownership_signature());
+    cheat_block_timestamp(account_address, timestamp, CheatSpan::Indefinite);
+    cheat_chain_id(account_address, 'SN_MAIN', CheatSpan::Indefinite);
+    ISRC9_V2Dispatcher { contract_address: account_address }
+}
+
+/// Setup an initialized account with default TEST_TIMESTAMP for EFO tests.
+/// Returns src9_dispatcher (use src9.contract_address if account address is needed).
+pub fn setup_efo_test() -> ISRC9_V2Dispatcher {
+    setup_efo_test_with_timestamp(TEST_TIMESTAMP)
+}
+
+/// Setup an initialized account with ERC20 mock for EFO tests.
+/// Returns (src9_dispatcher, token_address, erc20_dispatcher).
+pub fn setup_efo_test_with_erc20() -> (ISRC9_V2Dispatcher, ContractAddress, IERC20Dispatcher) {
+    let src9 = setup_efo_test();
+    let (token_address, token) = deploy_mock_erc20(src9.contract_address);
+    (src9, token_address, token)
+}
+
+// ================================
 // OutsideExecution test fixtures
 // ================================
 
@@ -75,7 +110,7 @@ pub const ANY_CALLER: felt252 = 'ANY_CALLER';
 
 /// Returns a test OutsideExecution with fixed values and empty calls.
 /// Using empty calls to avoid ENTRYPOINT_NOT_FOUND errors during testing.
-pub fn get_test_outside_execution(_contract_address: ContractAddress) -> OutsideExecution {
+pub fn get_test_outside_execution() -> OutsideExecution {
     OutsideExecution {
         caller: ANY_CALLER.try_into().unwrap(),
         nonce: TEST_NONCE,
@@ -101,7 +136,7 @@ pub fn get_outside_execution_signature() -> Array<felt252> {
         0x4b52469cfdda3614944d145122ee96ab, // s_high
         0xca19b48f5b51afacc161928fe72cdf69, // s_low
         28, // v
-        1 // chain_id (EVM)
+        1 // chain_id (EVM=Ethereum)
     ]
 }
 
@@ -119,14 +154,14 @@ pub fn get_invalid_outside_execution_signature() -> Array<felt252> {
 
 /// Returns a signature with WRONG EVM chain ID (chain_id=2 instead of 1).
 /// This should fail signature validation because the domain separator is different.
-pub fn get_signature_wrong_evm_chain_id() -> Array<felt252> {
+pub fn get_signature_evm_chain_id_2() -> Array<felt252> {
     array![
         0xe2aebdd44a9a03902eedb97065c2c279, // r_high
         0xfcfd2f2325c7a0bc4af74252f84b10b, // r_low
         0x73394d79eeda1d151b2facdcb2c9bd91, // s_high
         0x69b65ab69e218022a936846ea383df37, // s_low
         27, // v
-        2 // chain_id (WRONG - should be 1)
+        2 // hain_id: Not Ethereum
     ]
 }
 
@@ -153,5 +188,165 @@ pub fn get_signature_wrong_contract_address() -> Array<felt252> {
         0xd75388e53f1099eaae03b1ac49d0227a, // s_low
         28, // v
         1 // chain_id
+    ]
+}
+
+// ================================
+// ERC20 Mock helpers for execute_from_outside tests
+// ================================
+
+/// Initial supply for mock ERC20 token.
+pub const MOCK_ERC20_INITIAL_SUPPLY: u256 = 1000_u256;
+
+/// Deploy a mock ERC20 token with initial supply minted to the specified owner.
+/// Returns (token_address, dispatcher).
+pub fn deploy_mock_erc20(owner: ContractAddress) -> (ContractAddress, IERC20Dispatcher) {
+    let contract_class = snforge_std::declare("DualCaseERC20Mock")
+        .unwrap_syscall()
+        .contract_class();
+
+    // Constructor args: name (ByteArray), symbol (ByteArray), decimals (u8), initial_supply (u256),
+    // recipient (ContractAddress)
+    let mut calldata: Array<felt252> = array![];
+
+    // name: ByteArray - serialize properly
+    let name: ByteArray = "MockToken";
+    name.serialize(ref calldata);
+
+    // symbol: ByteArray - serialize properly
+    let symbol: ByteArray = "MTK";
+    symbol.serialize(ref calldata);
+
+    // decimals: u8
+    let decimals: u8 = 18;
+    decimals.serialize(ref calldata);
+
+    // initial_supply: u256
+    MOCK_ERC20_INITIAL_SUPPLY.serialize(ref calldata);
+
+    // recipient: ContractAddress
+    owner.serialize(ref calldata);
+
+    let (token_address, _) = contract_class.deploy(@calldata).unwrap_syscall();
+    let dispatcher = IERC20Dispatcher { contract_address: token_address };
+    (token_address, dispatcher)
+}
+
+/// Build an approve Call for ERC20.
+pub fn build_approve_call(
+    token_address: ContractAddress, spender: ContractAddress, amount: u256,
+) -> Call {
+    Call {
+        to: token_address,
+        selector: selector!("approve"),
+        calldata: array![spender.into(), amount.low.into(), amount.high.into()].span(),
+    }
+}
+
+/// Build a transfer Call for ERC20.
+pub fn build_transfer_call(
+    token_address: ContractAddress, recipient: ContractAddress, amount: u256,
+) -> Call {
+    Call {
+        to: token_address,
+        selector: selector!("transfer"),
+        calldata: array![recipient.into(), amount.low.into(), amount.high.into()].span(),
+    }
+}
+
+/// Nonces for different test scenarios (to avoid conflicts).
+pub const NONCE_SINGLE_CALL: felt252 = 100;
+pub const NONCE_MULTI_CALL: felt252 = 101;
+pub const NONCE_ATOMICITY: felt252 = 102;
+pub const NONCE_SPECIFIC_CALLER: felt252 = 103;
+
+/// Specific caller address for testing non-ANY_CALLER scenarios.
+pub const SPECIFIC_CALLER: felt252 = 0xCAFE;
+
+/// Build OutsideExecution with specified calls (uses ANY_CALLER).
+pub fn build_outside_execution_with_calls(calls: Span<Call>, nonce: felt252) -> OutsideExecution {
+    OutsideExecution {
+        caller: ANY_CALLER.try_into().unwrap(),
+        nonce: nonce,
+        execute_after: EXECUTE_AFTER,
+        execute_before: EXECUTE_BEFORE,
+        calls: calls,
+    }
+}
+
+/// Build OutsideExecution with a specific caller (not ANY_CALLER).
+pub fn build_outside_execution_with_specific_caller(
+    nonce: felt252, caller: ContractAddress,
+) -> OutsideExecution {
+    OutsideExecution {
+        caller: caller,
+        nonce: nonce,
+        execute_after: EXECUTE_AFTER,
+        execute_before: EXECUTE_BEFORE,
+        calls: array![].span(),
+    }
+}
+
+// ================================
+// Signatures for execute_from_outside tests with calls
+// ================================
+// NOTE: These signatures are generated by scripts/generate_test_signatures.py
+// and must be regenerated if any test parameters change.
+// The signatures depend on: contract_address, token_address, call parameters, nonce.
+// Pre-computed for:
+// - Contract: 0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4
+// - Token: 0x405ea0439568d265140400aa7b31e896604406bdfa7e73e18dec06303c31c6c
+// - Spender: 0x1234, Recipient: 0x5678
+
+/// Signature for single approve call test.
+/// OutsideExecution with nonce=100, approve 500 tokens to spender.
+pub fn get_single_call_approve_signature() -> Array<felt252> {
+    array![
+        0x1df31ee91675558108ce242888ccbf09, // r_high
+        0xce39f1955774fd02a7c93cb9a7ccf33b, // r_low
+        0x1b35465d87708c6d1c70d216e91b6a79, // s_high
+        0x916b0be291ada83ecea84291854f2e98, // s_low
+        27, // v
+        1 // chain_id (EVM)
+    ]
+}
+
+/// Signature for multi-call test (approve 500 + transfer 100).
+/// OutsideExecution with nonce=101, two calls.
+pub fn get_multi_call_signature() -> Array<felt252> {
+    array![
+        0xe823335915d3f9c1a8cf05182f4d5366, // r_high
+        0xa83e96990bab81e018fd27aa284c0ad0, // r_low
+        0x7c4d2c87ace56a14eb444063a5bdb343, // s_high
+        0xf23b9d84fc44d9a10fbb0abb7cfa2bad, // s_low
+        28, // v
+        1 // chain_id (EVM)
+    ]
+}
+
+/// Signature for atomicity test (approve 500 + transfer 1001 - fails).
+/// OutsideExecution with nonce=102, second call will fail due to insufficient balance.
+pub fn get_atomicity_test_signature() -> Array<felt252> {
+    array![
+        0xd0cbbfc6638e59a5e3b576ae9b2305dd, // r_high
+        0xbabcee977ce0c6b0ee9ece7f944dbce3, // r_low
+        0x6f27c710ab23db5cf1e101e87602d5fd, // s_high
+        0x9170f7129929d19c9a6234d0797ca300, // s_low
+        28, // v
+        1 // chain_id (EVM)
+    ]
+}
+
+/// Signature for specific caller test.
+/// OutsideExecution with nonce=103, caller=0xCAFE, empty calls.
+/// Used for testing non-ANY_CALLER scenarios.
+pub fn get_specific_caller_signature() -> Array<felt252> {
+    array![
+        0x661b512c1158c255c61c5f0214f167c7, // r_high
+        0x961538890df420779799bd7a8d236e06, // r_low
+        0x3fbcc975607ffe4640fc6c175ee5cdae, // s_high
+        0x5fc913ba9a2de3bbe95914339a7a8666, // s_low
+        27, // v
+        1 // chain_id (EVM)
     ]
 }
