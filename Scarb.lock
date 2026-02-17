@@ -38,6 +38,7 @@ version = "0.1.0"
 dependencies = [
  "openzeppelin",
  "snforge_std",
+ "starkware_utils",
  "starkware_utils_testing",
  "testing_utils",
 ]

@@ -10,11 +10,18 @@ starknet.workspace = true
 [dev-dependencies]
 assert_macros.workspace = true
 snforge_std.workspace = true
+starkware_utils.workspace = true
 starkware_utils_testing.workspace = true
 testing_utils = { path = "../testing_utils" }
 
 [[target.starknet-contract]]
 sierra = true
+
+[[test]]
+name = "eth_712_account_unittest"
+build-external-contracts = [
+    "starkware_utils::erc20::erc20_mocks::DualCaseERC20Mock",
+]
 
 [profile.dev.cairo]
 unstable-add-statements-functions-debug-info = true
