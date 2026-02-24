@@ -3,29 +3,29 @@
 
 /// StarknetEth712Account
 ///
-/// Account contract that supports ISRC9_V2 (Execute from outside v2) and ISRC5 (Introspection).
-/// The Account contract is initialized with an Ethereum address.
-/// The transaction executed by the account is validated using EIP-712.
-/// and signed using Secp256k1.
-/// This allows the account to sign the txs from the wallet of a remote chain,
-/// and execute them locally on Starknet.
+/// Account contract that supports ISRC6, ISRC9_V2 (Execute from outside v2) and ISRC5.
+/// Initialized with an Ethereum address; transactions are validated using EIP-712
+/// and signed with Secp256k1, allowing signing from a remote chain's wallet
+/// and execution on Starknet.
 
 #[starknet::contract(account)]
 pub mod StarknetEth712Account {
     use core::num::traits::Zero;
     use eth_712_account::eth_712_utils::{
-        assert_valid_owner, extract_signature, get_outside_execution_hash, is_valid_signature,
+        Transaction, TransactionMetadata, assert_valid_owner, extract_signature,
+        extract_signature_flexible, get_outside_execution_hash, get_transaction_hash,
+        is_tx_version_valid, is_valid_eth_signature, resource_bounds_as_felts,
     };
     use eth_712_account::interface::{
         IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
     };
-    use openzeppelin::account::AccountComponent;
     use openzeppelin::account::extensions::src9::interface::ISRC9_V2_ID;
     use openzeppelin::account::extensions::src9::{ISRC9_V2, OutsideExecution};
-    use openzeppelin::account::interface::ISRC6_ID;
-    use openzeppelin::account::utils::execute_calls;
+    use openzeppelin::account::interface::{ISRC6, ISRC6_ID};
+    use openzeppelin::account::utils::{execute_calls, execute_single_call};
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::introspection::src5::SRC5Component::InternalTrait as SRC5InternalTrait;
+    use starknet::account::Call;
     use starknet::secp256_trait::Signature;
     use starknet::storage::{
         Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess,
@@ -35,12 +35,12 @@ pub mod StarknetEth712Account {
     use starknet::{ClassHash, EthAddress, SyscallResultTrait};
 
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
-    component!(path: AccountComponent, storage: account, event: AccountEvent);
+
+    #[abi(embed_v0)]
+    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
 
     #[storage]
     pub struct Storage {
-        #[substorage(v0)]
-        pub account: AccountComponent::Storage,
         #[substorage(v0)]
         pub src5: SRC5Component::Storage,
         pub SRC9_nonces: Map<felt252, bool>,
@@ -51,21 +51,61 @@ pub mod StarknetEth712Account {
     #[derive(Drop, starknet::Event)]
     enum Event {
         #[flat]
-        AccountEvent: AccountComponent::Event,
-        #[flat]
         SRC5Event: SRC5Component::Event,
         Upgraded: Upgraded,
     }
 
-    // We need an account component implementation, as it's required by pay-master.
-    // However, the make-up of the contract (e.g. not initializing the account component)
-    // renders the __validate__ method unusable.
-    #[abi(embed_v0)]
-    pub(crate) impl AccountMixinImpl =
-        AccountComponent::AccountMixinImpl<ContractState>;
-    impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
+    // ================================
+    // Account Entrypoints (ISRC6)
+    // ================================
 
-    // ABI implementation.
+    #[abi(embed_v0)]
+    impl ISRC6Impl of ISRC6<ContractState> {
+        fn __validate__(self: @ContractState, calls: Array<Call>) -> felt252 {
+            let tx_info = starknet::get_tx_info().unbox();
+            let (signature, evm_chain_id) = extract_signature(tx_info.signature);
+
+            let transaction = Transaction {
+                calls: calls.span(),
+                metadata: @TransactionMetadata {
+                    version: tx_info.version,
+                    chain_id: tx_info.chain_id,
+                    execution_resources: resource_bounds_as_felts(tx_info.resource_bounds),
+                    tip: tx_info.tip.into(),
+                    nonce: tx_info.nonce,
+                },
+            };
+            let msg_hash = get_transaction_hash(@transaction, chain_id: evm_chain_id);
+            assert(
+                is_valid_eth_signature(:msg_hash, :signature, eth_address: self.eth_address.read()),
+                'INVALID_SIGNATURE',
+            );
+            starknet::VALIDATED
+        }
+
+        fn __execute__(self: @ContractState, calls: Array<Call>) {
+            assert(starknet::get_caller_address().is_zero(), 'INVALID_CALLER');
+            assert(is_tx_version_valid(), 'INVALID_TX_VERSION');
+            for call in calls.span() {
+                execute_single_call(call);
+            }
+        }
+
+        fn is_valid_signature(
+            self: @ContractState, hash: felt252, signature: Array<felt252>,
+        ) -> felt252 {
+            let sig = extract_signature_flexible(signature.span());
+            if is_valid_eth_signature(hash.into(), sig, self.eth_address.read()) {
+                starknet::VALIDATED
+            } else {
+                0
+            }
+        }
+    }
+
+    // ================================
+    // Admin Implementation
+    // ================================
 
     #[abi(embed_v0)]
     impl AdminImpl of IAccount712Admin<ContractState> {
@@ -126,7 +166,7 @@ pub mod StarknetEth712Account {
             let (signature, evm_chain_id) = extract_signature(:signature);
             let msg_hash = get_outside_execution_hash(@outside_execution, chain_id: evm_chain_id);
             assert(
-                is_valid_signature(:msg_hash, :signature, eth_address: self.eth_address.read()),
+                is_valid_eth_signature(:msg_hash, :signature, eth_address: self.eth_address.read()),
                 'INVALID_SIGNATURE',
             );
             execute_calls(calls)
@@ -141,8 +181,8 @@ pub mod StarknetEth712Account {
     pub impl InternalImpl of InternalTrait {
         fn assert_only_self(self: @ContractState) {
             let caller = starknet::get_caller_address();
-            let self = starknet::get_contract_address();
-            assert(self == caller, 'UNAUTHORIZED');
+            let self_addr = starknet::get_contract_address();
+            assert(self_addr == caller, 'UNAUTHORIZED');
         }
     }
 }

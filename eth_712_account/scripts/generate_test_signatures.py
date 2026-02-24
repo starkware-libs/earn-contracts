@@ -2,8 +2,15 @@
 """
 Generate EIP-712 signatures for eth_712_account test cases.
 
-This script generates signatures that match the hashing logic in eth_712_utils.cairo.
-The signatures are used in test_execute_from_outside tests with actual calls.
+This script generates signatures that match the hashing logic in eth_712_utils.cairo
+and writes them directly into ../src/test_utils.cairo between marker comments:
+
+    // GENERATED-SIGNATURES-START (by scripts/generate_test_signatures.py -- do not edit manually)
+    ... generated functions ...
+    // GENERATED-SIGNATURES-END
+
+The script is idempotent: running it again on an already-correct file produces no changes.
+If the signing logic or test parameters change, re-running the script updates test_utils.cairo.
 
 Setup:
     cd eth_712_account/scripts
@@ -17,464 +24,440 @@ Usage:
 Dependencies: eth-account, web3 (see requirements.txt)
 """
 
-from eth_account import Account
-from eth_account.messages import encode_typed_data
-from web3 import Web3
+import pathlib
+import re
 
-# Test private key (same as used for existing test signatures)
-# Address: 0xbF60187c5dFfA627249f1C3000A4168dbB9D7A1A
+from eip712 import (
+    ANY_CALLER,
+    MASK_128,
+    outside_execution_msg_hash,
+    resource_bounds_to_felts,
+    selector,
+    sign_and_split,
+    transaction_msg_hash,
+)
+
+# ============================================================================
+# Test constants (must match test_utils.cairo)
+# ============================================================================
+
 PRIVATE_KEY = "0xa6d86467b6ec9e161649b27edfd8519e75a2e1cf5f4c309c628706e6999780e8"
 
-# Expected deployed contract address (deterministic from snforge)
-# This is the lower 128 bits used in verifyingContract
-EXPECTED_CONTRACT_ADDRESS = 0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4
+EXPECTED_CONTRACT_ADDRESS = 0x07120acc07120acc07120acc07120acc
+ERC20_MOCK_ADDRESS = 0x0e2c200e2c200e2c200e2c200e2c2000
 
-# Test constants matching test_utils.cairo
+# Re-run this script after recompiling if RegisterInterfacesEIC changes.
+FIXED_UPGRADE_TARGET_CLASS_HASH = 0x4775e80641f54baffdce08e82de59d491bc9cbef8d674c7f76f94c2b80b1035
+
 EXECUTE_AFTER = 1000
 EXECUTE_BEFORE = 3000
 TEST_NONCE = 1
 ETH_CHAIN_ID = 1
-ANY_CALLER = int.from_bytes(b"ANY_CALLER", "big")
-
-MASK_128 = (1 << 128) - 1
-MASK_250 = (1 << 250) - 1
-# ERC20 Mock address - deterministic based on snforge deployment
-ERC20_MOCK_ADDRESS = 0x405ea0439568d265140400aa7b31e896604406bdfa7e73e18dec06303c31c6c
-
-# Test addresses for spender/recipient (matching test.cairo)
-TEST_SPENDER = 0x1234
-TEST_RECIPIENT = 0x5678
-
-# Specific caller address for testing non-ANY_CALLER scenarios
-SPECIFIC_CALLER = 0xCAFE
-
-# Starknet chain ID for domain name (keccak of this string)
 SN_CHAIN_ID = "SN_MAIN"
 
+TEST_SPENDER = 0x1234
+TEST_RECIPIENT = 0x5678
+SPECIFIC_CALLER = 0xCAFE
+WRONG_CONTRACT_ADDRESS = 0xDEAD
 
-def keccak256(data: bytes) -> bytes:
-    """Compute keccak256 hash."""
-    return Web3.keccak(data)
-
-
-def keccak256_str(s: str) -> bytes:
-    """Compute keccak256 of a string."""
-    return keccak256(s.encode("utf-8"))
-
-
-def to_bytes32(val: int) -> bytes:
-    """Convert u256 to 32 bytes (big-endian)."""
-    return val.to_bytes(32, "big")
-
-
-def hash_felt_array(felts: list[int]) -> bytes:
-    """Hash an array of felts (keccak of concatenated 32-byte representations)."""
-    data = b"".join(to_bytes32(f) for f in felts)
-    return keccak256(data)
-
-
-# Type hashes (must match eth_712_utils.cairo)
-EIP712_DOMAIN_TYPE_HASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f
-CALL_TYPE_HASH = 0x7793b9bed3b87c6119fe923f0da4e85e1f97a03272a446514622ee7bd62ad25f
-OUTSIDE_EXECUTION_TYPE_HASH = 0x57fbef2abe14202f3651b3935a8feddd357b8f83a862e046239d196ec76f281e
-VERSION_HASH = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5
-
-
-def hash_call(call: dict) -> bytes:
-    """
-    Hash a Call struct matching push_call in eth_712_utils.cairo.
-
-    call = {"to": int, "selector": int, "calldata": list[int]}
-    """
-    # Hash: keccak(CALL_TYPE_HASH || to || selector || hash(calldata))
-    data = (
-        to_bytes32(CALL_TYPE_HASH)
-        + to_bytes32(call["to"])
-        + to_bytes32(call["selector"])
-        + hash_felt_array(call["calldata"])
-    )
-    return keccak256(data)
-
-
-def hash_call_array(calls: list[dict]) -> bytes:
-    """Hash an array of Calls (keccak of concatenated call hashes)."""
-    data = b"".join(hash_call(c) for c in calls)
-    return keccak256(data)
-
-
-def hash_outside_execution(outside_execution: dict) -> bytes:
-    """
-    Hash OutsideExecution struct matching push_outside_execution in eth_712_utils.cairo.
-
-    NOTE: The Cairo code hashes fields in this order:
-    1. OUTSIDE_EXECUTION_TYPE_HASH
-    2. hash(calls)
-    3. caller
-    4. nonce
-    5. execute_after
-    6. execute_before
-    """
-    calls_hash = hash_call_array(outside_execution["calls"])
-
-    data = (
-        to_bytes32(OUTSIDE_EXECUTION_TYPE_HASH)
-        + calls_hash
-        + to_bytes32(outside_execution["caller"])
-        + to_bytes32(outside_execution["nonce"])
-        + to_bytes32(outside_execution["execute_after"])
-        + to_bytes32(outside_execution["execute_before"])
-    )
-    return keccak256(data)
-
-
-def get_domain_separator(contract_address: int, evm_chain_id: int, sn_chain_name: str) -> bytes:
-    """
-    Compute EIP-712 domain separator matching push_domain_separator in eth_712_utils.cairo.
-
-    Domain fields:
-    - name: keccak(sn_chain_name)
-    - version: VERSION_HASH (keccak("2"))
-    - chainId: evm_chain_id
-    - verifyingContract: lower 128 bits of contract_address
-    """
-    name_hash = keccak256_str(sn_chain_name)
-
-    # verifyingContract is the lower 128 bits of the contract address
-    verifying_contract = contract_address & MASK_128
-
-    data = (
-        to_bytes32(EIP712_DOMAIN_TYPE_HASH)
-        + name_hash
-        + to_bytes32(VERSION_HASH)
-        + to_bytes32(evm_chain_id)
-        + to_bytes32(verifying_contract)
-    )
-    return keccak256(data)
-
-
-def get_message_hash(
-    outside_execution: dict,
-    contract_address: int,
-    evm_chain_id: int,
-    sn_chain_name: str = SN_CHAIN_ID,
-) -> bytes:
-    """
-    Compute the full EIP-712 message hash matching get_outside_execution_hash in eth_712_utils.cairo.
-
-    Format: keccak(0x19 || 0x01 || domain_separator || struct_hash)
-    """
-    domain_separator = get_domain_separator(contract_address, evm_chain_id, sn_chain_name)
-    struct_hash = hash_outside_execution(outside_execution)
-
-    data = b"\x19\x01" + domain_separator + struct_hash
-    return keccak256(data)
+# ============================================================================
+# Signing helpers
+# ============================================================================
 
 
 def sign_outside_execution(
-    outside_execution: dict,
+    oe: dict,
     contract_address: int,
     evm_chain_id: int = ETH_CHAIN_ID,
     sn_chain_name: str = SN_CHAIN_ID,
-    private_key: str = PRIVATE_KEY,
 ) -> dict:
-    """
-    Sign an OutsideExecution and return signature components.
+    """Sign an OutsideExecution and return 6-felt signature dict."""
+    msg_hash = outside_execution_msg_hash(oe, sn_chain_name, contract_address, evm_chain_id)
+    return sign_and_split(msg_hash, PRIVATE_KEY, evm_chain_id)
 
-    Returns: {"r_high", "r_low", "s_high", "s_low", "v", "chain_id"}
-    """
-    msg_hash = get_message_hash(outside_execution, contract_address, evm_chain_id, sn_chain_name)
 
-    # Sign using eth_account
-    account = Account.from_key(private_key)
-    signed = account.unsafe_sign_hash(msg_hash)
+def sign_transaction(
+    calls: list[dict],
+    metadata: dict,
+    contract_address: int,
+    evm_chain_id: int = ETH_CHAIN_ID,
+    sn_chain_name: str = SN_CHAIN_ID,
+) -> dict:
+    """Sign a Transaction (__validate__) and return 6-felt signature dict."""
+    msg_hash = transaction_msg_hash(calls, metadata, sn_chain_name, contract_address, evm_chain_id)
+    return sign_and_split(msg_hash, PRIVATE_KEY, evm_chain_id)
 
-    r = signed.r
-    s = signed.s
-    v = signed.v
 
-    # Split r and s into high/low 128-bit parts (for Cairo felt252)
-    r_high = r >> 128
-    r_low = r & ((1 << 128) - 1)
-    s_high = s >> 128
-    s_low = s & ((1 << 128) - 1)
+# ============================================================================
+# __validate__ metadata
+# ============================================================================
 
+VALIDATE_TX_VERSION = 3
+VALIDATE_NONCE = 0
+VALIDATE_TIP = 0
+VALIDATE_SN_CHAIN_ID = int.from_bytes(SN_CHAIN_ID.encode("ascii"), "big")
+VALIDATE_RESOURCE_BOUNDS = resource_bounds_to_felts(
+    l1_gas_amount=100, l1_gas_price=1000,
+    l2_gas_amount=200, l2_gas_price=2000,
+    l1_data_amount=300, l1_data_price=3000,
+)
+
+
+def build_validate_metadata(nonce: int = VALIDATE_NONCE) -> dict:
+    """Build TransactionMetadata dict for __validate__ tests."""
     return {
-        "r_high": r_high,
-        "r_low": r_low,
-        "s_high": s_high,
-        "s_low": s_low,
-        "v": v,
-        "chain_id": evm_chain_id,
+        "version": VALIDATE_TX_VERSION,
+        "chain_id": VALIDATE_SN_CHAIN_ID,
+        "execution_resources": VALIDATE_RESOURCE_BOUNDS,
+        "tip": VALIDATE_TIP,
+        "nonce": nonce,
     }
-
-
-def format_signature_cairo(sig: dict, name: str) -> str:
-    """Format signature as Cairo code."""
-    return f"""/// Signature for {name}
-pub fn get_{name}_signature() -> Array<felt252> {{
-    array![
-        0x{sig['r_high']:032x}, // r_high
-        0x{sig['r_low']:032x}, // r_low
-        0x{sig['s_high']:032x}, // s_high
-        0x{sig['s_low']:032x}, // s_low
-        {sig['v']}, // v
-        {sig['chain_id']} // chain_id (EVM)
-    ]
-}}
-"""
-
-
-def selector(name: str) -> int:
-    """Compute Starknet selector (sn_keccak of function name)."""
-    # sn_keccak is keccak256 with the top 250 bits
-    h = keccak256_str(name)
-    val = int.from_bytes(h, "big")
-    # Mask to 250 bits (felt252 constraint)
-    return val & MASK_250
 
 
 # ============================================================================
-# Test Case Definitions
+# EFO test case generators
 # ============================================================================
 
-def generate_single_call_approve_test(
-    contract_address: int,
-    token_address: int,
-    spender: int,
-    amount: int,
-) -> tuple[dict, dict]:
-    """
-    Generate OutsideExecution for single approve call test.
 
-    Returns: (outside_execution, signature)
-    """
-    # approve(spender: ContractAddress, amount: u256)
-    # calldata: [spender, amount_low, amount_high]
-    amount_low = amount & MASK_128
-    amount_high = amount >> 128
-
-    call = {
-        "to": token_address,
-        "selector": selector("approve"),
-        "calldata": [spender, amount_low, amount_high],
-    }
-
-    outside_execution = {
-        "caller": ANY_CALLER,
-        "nonce": TEST_NONCE,
-        "execute_after": EXECUTE_AFTER,
-        "execute_before": EXECUTE_BEFORE,
-        "calls": [call],
-    }
-
-    sig = sign_outside_execution(outside_execution, contract_address)
-    return outside_execution, sig
-
-
-def generate_multi_call_test(
-    contract_address: int,
-    token_address: int,
-    spender: int,
-    recipient: int,
-    approve_amount: int,
-    transfer_amount: int,
-) -> tuple[dict, dict]:
-    """
-    Generate OutsideExecution for multi-call test (approve + transfer).
-
-    Returns: (outside_execution, signature)
-    """
-    approve_low = approve_amount & MASK_128
-    approve_high = approve_amount >> 128
-    transfer_low = transfer_amount & MASK_128
-    transfer_high = transfer_amount >> 128
-
-    calls = [
-        {
-            "to": token_address,
-            "selector": selector("approve"),
-            "calldata": [spender, approve_low, approve_high],
-        },
-        {
-            "to": token_address,
-            "selector": selector("transfer"),
-            "calldata": [recipient, transfer_low, transfer_high],
-        },
-    ]
-
-    outside_execution = {
-        "caller": ANY_CALLER,
-        "nonce": 2,  # Different nonce for this test
-        "execute_after": EXECUTE_AFTER,
-        "execute_before": EXECUTE_BEFORE,
-        "calls": calls,
-    }
-
-    sig = sign_outside_execution(outside_execution, contract_address)
-    return outside_execution, sig
-
-
-def generate_atomicity_test(
-    contract_address: int,
-    token_address: int,
-    spender: int,
-    recipient: int,
-    approve_amount: int,
-    transfer_amount: int,  # Should be > balance to cause revert
-) -> tuple[dict, dict]:
-    """
-    Generate OutsideExecution for atomicity test (approve succeeds, transfer fails).
-
-    Returns: (outside_execution, signature)
-    """
-    approve_low = approve_amount & MASK_128
-    approve_high = approve_amount >> 128
-    transfer_low = transfer_amount & MASK_128
-    transfer_high = transfer_amount >> 128
-
-    calls = [
-        {
-            "to": token_address,
-            "selector": selector("approve"),
-            "calldata": [spender, approve_low, approve_high],
-        },
-        {
-            "to": token_address,
-            "selector": selector("transfer"),
-            "calldata": [recipient, transfer_low, transfer_high],
-        },
-    ]
-
-    outside_execution = {
-        "caller": ANY_CALLER,
-        "nonce": 3,  # Different nonce for this test
-        "execute_after": EXECUTE_AFTER,
-        "execute_before": EXECUTE_BEFORE,
-        "calls": calls,
-    }
-
-    sig = sign_outside_execution(outside_execution, contract_address)
-    return outside_execution, sig
-
-
-def generate_specific_caller_test(
-    contract_address: int,
-    caller: int,
-    nonce: int,
-) -> tuple[dict, dict]:
-    """
-    Generate OutsideExecution with a specific caller (not ANY_CALLER).
-    Uses empty calls for simplicity.
-
-    Returns: (outside_execution, signature)
-    """
-    outside_execution = {
+def _build_oe(calls: list[dict], nonce: int, caller: int = ANY_CALLER) -> dict:
+    """Build an OutsideExecution dict with default timestamps."""
+    return {
         "caller": caller,
         "nonce": nonce,
         "execute_after": EXECUTE_AFTER,
         "execute_before": EXECUTE_BEFORE,
-        "calls": [],
+        "calls": calls,
     }
 
-    sig = sign_outside_execution(outside_execution, contract_address)
-    return outside_execution, sig
+
+def _approve_call(token: int, spender: int, amount: int) -> dict:
+    return {
+        "to": token,
+        "selector": selector("approve"),
+        "calldata": [spender, amount & MASK_128, amount >> 128],
+    }
 
 
-def main():
-    """Generate and print all test signatures."""
-    print("=" * 80)
-    print("EIP-712 Test Signature Generator for eth_712_account")
-    print("=" * 80)
-    print()
+def _transfer_call(token: int, recipient: int, amount: int) -> dict:
+    return {
+        "to": token,
+        "selector": selector("transfer"),
+        "calldata": [recipient, amount & MASK_128, amount >> 128],
+    }
 
-    contract_address = EXPECTED_CONTRACT_ADDRESS
-    token_address = ERC20_MOCK_ADDRESS
+
+def _upgrade_call(contract_address: int, class_hash: int) -> dict:
+    return {
+        "to": contract_address,
+        "selector": selector("upgrade"),
+        "calldata": [class_hash, 1],  # 1 = Option::None in Cairo
+    }
+
+
+def generate_basic_outside_execution(
+    contract_address: int,
+    nonce: int = TEST_NONCE,
+    evm_chain_id: int = ETH_CHAIN_ID,
+    sn_chain_name: str = SN_CHAIN_ID,
+) -> dict:
+    """EFO signature for basic OutsideExecution with empty calls."""
+    oe = _build_oe([], nonce)
+    return sign_outside_execution(oe, contract_address, evm_chain_id, sn_chain_name)
+
+
+def generate_wrong_sn_chain_name(contract_address: int) -> dict:
+    """EFO signature with SN_SEPOLIA (will fail against SN_MAIN domain)."""
+    return generate_basic_outside_execution(contract_address, sn_chain_name="SN_SEPOLIA")
+
+
+def generate_wrong_contract_address() -> dict:
+    """EFO signature with a wrong contract address."""
+    return generate_basic_outside_execution(WRONG_CONTRACT_ADDRESS)
+
+
+def generate_single_call_approve_test(
+    contract_address: int, token: int, spender: int, amount: int, nonce: int,
+) -> dict:
+    """EFO signature for single approve call."""
+    oe = _build_oe([_approve_call(token, spender, amount)], nonce)
+    return sign_outside_execution(oe, contract_address)
+
+
+def generate_multi_call_test(
+    contract_address: int, token: int, spender: int, recipient: int,
+    approve_amount: int, transfer_amount: int, nonce: int,
+) -> dict:
+    """EFO signature for approve + transfer."""
+    calls = [
+        _approve_call(token, spender, approve_amount),
+        _transfer_call(token, recipient, transfer_amount),
+    ]
+    oe = _build_oe(calls, nonce)
+    return sign_outside_execution(oe, contract_address)
+
+
+def generate_atomicity_test(
+    contract_address: int, token: int, spender: int, recipient: int,
+    approve_amount: int, transfer_amount: int, nonce: int,
+) -> dict:
+    """EFO signature for atomicity test (approve succeeds, transfer fails)."""
+    calls = [
+        _approve_call(token, spender, approve_amount),
+        _transfer_call(token, recipient, transfer_amount),
+    ]
+    oe = _build_oe(calls, nonce)
+    return sign_outside_execution(oe, contract_address)
+
+
+def generate_specific_caller_test(contract_address: int, caller: int, nonce: int) -> dict:
+    """EFO signature with a specific caller (not ANY_CALLER), empty calls."""
+    oe = _build_oe([], nonce, caller=caller)
+    return sign_outside_execution(oe, contract_address)
+
+
+def generate_efo_upgrade_test(
+    contract_address: int, class_hash: int, nonce: int,
+) -> dict:
+    """EFO signature for upgrade(class_hash, Option::None)."""
+    oe = _build_oe([_upgrade_call(contract_address, class_hash)], nonce)
+    return sign_outside_execution(oe, contract_address)
+
+
+# ============================================================================
+# __validate__ test case generators
+# ============================================================================
+
+
+def generate_validate_empty_calls(contract_address: int, nonce: int = VALIDATE_NONCE) -> dict:
+    """__validate__ signature with empty calls."""
+    return sign_transaction([], build_validate_metadata(nonce), contract_address)
+
+
+def generate_validate_with_approve(
+    contract_address: int, token: int, spender: int, amount: int, nonce: int = VALIDATE_NONCE,
+) -> dict:
+    """__validate__ signature with a single approve call."""
+    call = _approve_call(token, spender, amount)
+    return sign_transaction([call], build_validate_metadata(nonce), contract_address)
+
+
+def generate_validate_wrong_chain(contract_address: int, nonce: int = VALIDATE_NONCE) -> dict:
+    """__validate__ signature with SN_SEPOLIA (will fail against SN_MAIN domain)."""
+    return sign_transaction(
+        [], build_validate_metadata(nonce), contract_address, sn_chain_name="SN_SEPOLIA",
+    )
+
+
+def generate_validate_upgrade(contract_address: int, class_hash: int, nonce: int) -> dict:
+    """__validate__ signature for upgrade(class_hash, Option::None)."""
+    call = _upgrade_call(contract_address, class_hash)
+    return sign_transaction([call], build_validate_metadata(nonce), contract_address)
+
+
+# ============================================================================
+# Cairo code generation
+# ============================================================================
+
+MARKER_START = "// GENERATED-SIGNATURES-START (by scripts/generate_test_signatures.py -- do not edit manually)"
+MARKER_END = "// GENERATED-SIGNATURES-END"
+
+
+def format_signature_cairo(sig: dict, fn_name: str, doc: str) -> str:
+    """Format a single signature as a Cairo function (scarb fmt compatible)."""
+    r_high = f"0x{sig['r_high']:032x}"
+    r_low = f"0x{sig['r_low']:032x}"
+    s_high = f"0x{sig['s_high']:032x}"
+    s_low = f"0x{sig['s_low']:032x}"
+    v = str(sig["v"])
+    chain_id = str(sig["chain_id"])
+    return (
+        f"/// {doc}\n"
+        f"pub fn {fn_name}() -> Array<felt252> {{\n"
+        f"    array![\n"
+        f"        {r_high}, {r_low},\n"
+        f"        {s_high}, {s_low}, {v}, {chain_id},\n"
+        f"    ]\n"
+        f"}}"
+    )
+
+
+def generate_all_signatures() -> list[str]:
+    """Generate all signature functions as Cairo code strings."""
+    addr = EXPECTED_CONTRACT_ADDRESS
+    token = ERC20_MOCK_ADDRESS
     spender = TEST_SPENDER
     recipient = TEST_RECIPIENT
 
-    # Nonces matching test_utils.cairo
     NONCE_SINGLE_CALL = 100
     NONCE_MULTI_CALL = 101
     NONCE_ATOMICITY = 102
     NONCE_SPECIFIC_CALLER = 103
-
-    # Test amounts (matching test.cairo).
+    NONCE_EFO_UPGRADE = 200
+    VALIDATE_NONCE_WITH_CALLS = 1
+    VALIDATE_NONCE_UPGRADE = 2
     APPROVE_AMOUNT = 500
     TRANSFER_AMOUNT = 100
     INITIAL_SUPPLY = 1000
 
-    print(f"Contract address: 0x{contract_address:064x}")
-    print(f"Token address: 0x{token_address:064x}")
-    print(f"Spender: 0x{spender:x}")
-    print(f"Recipient: 0x{recipient:x}")
-    print()
+    blocks: list[str] = []
 
-    print("Test 1: Single Call (approve 500 tokens)")
-    print("-" * 40)
+    # --- EFO: basic (empty calls) ---
 
-    # OSE: OutsideExecution.
-    ose, sig = generate_single_call_approve_test(
-        contract_address=contract_address,
-        token_address=token_address,
-        spender=spender,
-        amount=APPROVE_AMOUNT,
+    sig = generate_basic_outside_execution(addr)
+    blocks.append(format_signature_cairo(
+        sig, "get_outside_execution_signature",
+        "EFO signature: empty calls, nonce=1, chain_id=1.",
+    ))
+
+    sig = generate_basic_outside_execution(addr, evm_chain_id=2)
+    blocks.append(format_signature_cairo(
+        sig, "get_signature_evm_chain_id_2",
+        "EFO signature: empty calls, nonce=1, chain_id=2.",
+    ))
+
+    sig = generate_wrong_sn_chain_name(addr)
+    blocks.append(format_signature_cairo(
+        sig, "get_signature_wrong_sn_chain_name",
+        "EFO signature signed with SN_SEPOLIA domain (fails against SN_MAIN).",
+    ))
+
+    sig = generate_wrong_contract_address()
+    blocks.append(format_signature_cairo(
+        sig, "get_signature_wrong_contract_address",
+        "EFO signature signed with wrong contract address (domain mismatch).",
+    ))
+
+    # --- EFO: with ERC20 calls ---
+
+    sig = generate_single_call_approve_test(addr, token, spender, APPROVE_AMOUNT, NONCE_SINGLE_CALL)
+    blocks.append(format_signature_cairo(
+        sig, "get_single_call_approve_signature",
+        f"EFO signature: approve(0x1234, 500), nonce={NONCE_SINGLE_CALL}.",
+    ))
+
+    sig = generate_multi_call_test(
+        addr, token, spender, recipient, APPROVE_AMOUNT, TRANSFER_AMOUNT, NONCE_MULTI_CALL,
     )
-    # Override nonce to match test.
-    ose["nonce"] = NONCE_SINGLE_CALL
-    sig = sign_outside_execution(ose, contract_address)
-    print(f"Nonce: {NONCE_SINGLE_CALL}")
-    print(format_signature_cairo(sig, "single_call_approve"))
+    blocks.append(format_signature_cairo(
+        sig, "get_multi_call_signature",
+        f"EFO signature: approve(500) + transfer(100), nonce={NONCE_MULTI_CALL}.",
+    ))
 
-    print()
-    print("Test 2: Multi Call (approve 500 + transfer 100)")
-    print("-" * 40)
-    ose, sig = generate_multi_call_test(
-        contract_address=contract_address,
-        token_address=token_address,
-        spender=spender,
-        recipient=recipient,
-        approve_amount=APPROVE_AMOUNT,
-        transfer_amount=TRANSFER_AMOUNT,
+    sig = generate_atomicity_test(
+        addr, token, spender, recipient, APPROVE_AMOUNT, INITIAL_SUPPLY + 1, NONCE_ATOMICITY,
     )
-    # Override nonce to match test.
-    ose["nonce"] = NONCE_MULTI_CALL
-    sig = sign_outside_execution(ose, contract_address)
-    print(f"Nonce: {NONCE_MULTI_CALL}")
-    print(format_signature_cairo(sig, "multi_call"))
+    blocks.append(format_signature_cairo(
+        sig, "get_atomicity_test_signature",
+        f"EFO signature: approve(500) + transfer(1001, fails), nonce={NONCE_ATOMICITY}.",
+    ))
 
-    print()
-    print("Test 3: Atomicity (approve 500 + transfer 1001 - fails)")
-    print("-" * 40)
-    ose, sig = generate_atomicity_test(
-        contract_address=contract_address,
-        token_address=token_address,
-        spender=spender,
-        recipient=recipient,
-        approve_amount=APPROVE_AMOUNT,
-        transfer_amount=INITIAL_SUPPLY + 1,  # More than balance.
+    sig = generate_specific_caller_test(addr, SPECIFIC_CALLER, NONCE_SPECIFIC_CALLER)
+    blocks.append(format_signature_cairo(
+        sig, "get_specific_caller_signature",
+        f"EFO signature: specific caller=0xCAFE, nonce={NONCE_SPECIFIC_CALLER}, empty calls.",
+    ))
+
+    # --- __validate__ ---
+
+    sig = generate_validate_empty_calls(addr)
+    blocks.append(format_signature_cairo(
+        sig, "get_validate_empty_calls_signature",
+        "__validate__ signature: empty calls, nonce=0.",
+    ))
+
+    sig = generate_validate_with_approve(addr, token, spender, APPROVE_AMOUNT, VALIDATE_NONCE_WITH_CALLS)
+    blocks.append(format_signature_cairo(
+        sig, "get_validate_with_approve_signature",
+        "__validate__ signature: approve(0x1234, 500), nonce=1.",
+    ))
+
+    sig = generate_validate_wrong_chain(addr)
+    blocks.append(format_signature_cairo(
+        sig, "get_validate_wrong_chain_signature",
+        "__validate__ signature signed with SN_SEPOLIA domain (fails against SN_MAIN).",
+    ))
+
+    # --- Upgrade ---
+
+    sig = generate_efo_upgrade_test(addr, FIXED_UPGRADE_TARGET_CLASS_HASH, NONCE_EFO_UPGRADE)
+    blocks.append(format_signature_cairo(
+        sig, "get_efo_upgrade_signature",
+        f"EFO signature: upgrade(FIXED_UPGRADE_TARGET_CLASS_HASH, None), nonce={NONCE_EFO_UPGRADE}.",
+    ))
+
+    sig = generate_validate_upgrade(addr, FIXED_UPGRADE_TARGET_CLASS_HASH, VALIDATE_NONCE_UPGRADE)
+    blocks.append(format_signature_cairo(
+        sig, "get_validate_upgrade_signature",
+        f"__validate__ signature: upgrade(FIXED_UPGRADE_TARGET_CLASS_HASH, None), nonce={VALIDATE_NONCE_UPGRADE}.",
+    ))
+
+    return blocks
+
+
+# ============================================================================
+# File I/O
+# ============================================================================
+
+
+def build_generated_block(blocks: list[str]) -> str:
+    """Wrap signature functions in marker comments."""
+    result = MARKER_START + "\n"
+    for block in blocks:
+        result += "\n" + block + "\n"
+    result += MARKER_END + "\n"
+    return result
+
+
+def write_signatures_to_file(cairo_path: str, generated_block: str) -> bool:
+    """
+    Replace the marker-delimited section in the Cairo file with the generated block.
+    Returns True if the file was changed.
+    """
+    with open(cairo_path, "r") as f:
+        content = f.read()
+
+    pattern = re.compile(
+        re.escape(MARKER_START) + r".*?" + re.escape(MARKER_END) + r"\n?",
+        re.DOTALL,
     )
-    # Override nonce to match test
-    ose["nonce"] = NONCE_ATOMICITY
-    sig = sign_outside_execution(ose, contract_address)
-    print(f"Nonce: {NONCE_ATOMICITY}")
-    print(format_signature_cairo(sig, "atomicity_test"))
 
-    print()
-    print("Test 4: Specific Caller (non-ANY_CALLER)")
-    print("-" * 40)
-    ose, sig = generate_specific_caller_test(
-        contract_address=contract_address,
-        caller=SPECIFIC_CALLER,
-        nonce=NONCE_SPECIFIC_CALLER,
-    )
-    print(f"Nonce: {NONCE_SPECIFIC_CALLER}")
-    print(f"Caller: 0x{SPECIFIC_CALLER:x}")
-    print(format_signature_cairo(sig, "specific_caller"))
+    if not pattern.search(content):
+        raise ValueError(
+            f"Markers not found in {cairo_path}. "
+            f"Expected '{MARKER_START}' and '{MARKER_END}'."
+        )
 
-    print()
-    print("=" * 80)
-    print("Copy the signatures above into test_utils.cairo")
-    print("=" * 80)
+    new_content = pattern.sub(generated_block, content)
+
+    if new_content == content:
+        return False
+
+    with open(cairo_path, "w") as f:
+        f.write(new_content)
+    return True
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+
+def main():
+    """Generate all test signatures and write them into test_utils.cairo."""
+    script_dir = pathlib.Path(__file__).resolve().parent
+    cairo_path = (script_dir / ".." / "src" / "test_utils.cairo").resolve()
+
+    print("Generating signatures...")
+    blocks = generate_all_signatures()
+    generated_block = build_generated_block(blocks)
+
+    print(f"Writing to {cairo_path}")
+    changed = write_signatures_to_file(str(cairo_path), generated_block)
+
+    if changed:
+        print("File updated.")
+    else:
+        print("No changes (file already up to date).")
 
 
 if __name__ == "__main__":

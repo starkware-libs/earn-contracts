@@ -1,27 +1,35 @@
 use eth_712_account::interface::{IAccount712AdminDispatcher, IAccount712AdminDispatcherTrait};
 use eth_712_account::test_utils::{
-    EXECUTE_AFTER, EXECUTE_BEFORE, MOCK_ERC20_INITIAL_SUPPLY, NONCE_ATOMICITY, NONCE_MULTI_CALL,
-    NONCE_SINGLE_CALL, NONCE_SPECIFIC_CALLER, SPECIFIC_CALLER, TEST_ETH_ADDRESS, TEST_NONCE,
-    build_approve_call, build_outside_execution_with_calls,
-    build_outside_execution_with_specific_caller, build_transfer_call,
-    declare_register_interfaces_eic, deploy_eth712_account, get_atomicity_test_signature,
+    APPROVE_AMOUNT, APPROVE_SPENDER, EXECUTE_AFTER, EXECUTE_BEFORE, FIXED_UPGRADE_TARGET_CLASS_HASH,
+    MOCK_ERC20_INITIAL_SUPPLY, NONCE_ATOMICITY, NONCE_EFO_UPGRADE, NONCE_MULTI_CALL,
+    NONCE_SINGLE_CALL, NONCE_SPECIFIC_CALLER, PROTOCOL_ADDRESS, SPECIFIC_CALLER, TEST_ETH_ADDRESS,
+    TEST_NONCE, VALIDATE_NONCE_UPGRADE, VALIDATE_NONCE_WITH_CALLS, assert_upgraded_event,
+    build_outside_execution_with_calls, build_outside_execution_with_specific_caller,
+    build_transfer_call, declare_register_interfaces_eic, deploy_eth712_account, deploy_mock_erc20,
+    get_approve_call, get_atomicity_test_signature, get_efo_upgrade_signature,
     get_invalid_outside_execution_signature, get_invalid_signature, get_multi_call_signature,
     get_outside_execution_signature, get_ownership_signature, get_signature_evm_chain_id_2,
     get_signature_wrong_contract_address, get_signature_wrong_sn_chain_name,
     get_single_call_approve_signature, get_specific_caller_signature, get_test_outside_execution,
-    setup_efo_test, setup_efo_test_with_erc20, setup_efo_test_with_timestamp,
+    get_validate_empty_calls_signature, get_validate_upgrade_signature,
+    get_validate_with_approve_signature, get_validate_wrong_chain_signature, setup_efo_test,
+    setup_efo_test_with_erc20, setup_efo_test_with_timestamp, setup_initialized_account,
+    setup_validate_test,
 };
 use openzeppelin::account::extensions::src9::interface::{
     ISRC9_V2Dispatcher, ISRC9_V2DispatcherTrait, ISRC9_V2SafeDispatcher,
     ISRC9_V2SafeDispatcherTrait, ISRC9_V2_ID,
 };
-use openzeppelin::account::interface::ISRC6_ID;
+use openzeppelin::account::interface::{ISRC6DispatcherTrait, ISRC6_ID};
 use openzeppelin::introspection::interface::{ISRC5Dispatcher, ISRC5DispatcherTrait};
 use openzeppelin::token::erc20::interface::IERC20DispatcherTrait;
-use snforge_std::{EventSpyTrait, load, spy_events};
+use snforge_std::cheatcodes::CheatSpan;
+use snforge_std::{
+    cheat_caller_address, cheat_nonce, cheat_signature, cheat_transaction_version, load, spy_events,
+};
 use starknet::EthAddress;
 use starkware_utils_testing::test_utils::cheat_caller_address_once;
-use testing_utils::event_helpers::get_event_by_selector;
+
 
 // ================================
 // initialize tests
@@ -102,15 +110,7 @@ fn test_upgrade_from_self_succeeds() {
     let mut spy = spy_events();
     account_contract.upgrade(class_hash, Option::None);
 
-    // Verify Upgraded event was emitted
-    let events = spy.get_events();
-    let event_option = get_event_by_selector(events.events.span(), selector!("Upgraded"));
-    assert!(event_option.is_some(), "Upgraded event not found");
-    let (from, event) = event_option.unwrap();
-    assert!(*from == account_address, "Event from wrong address");
-    assert!(event.data.len() > 0, "Event has no data");
-    let class_hash_felt: felt252 = class_hash.into();
-    assert!(*event.data.at(0) == class_hash_felt, "Wrong class hash in event");
+    assert_upgraded_event(ref spy, account_address, class_hash.into());
 }
 
 #[test]
@@ -135,6 +135,143 @@ fn test_upgrade_with_eic() {
     // Verify the custom interface was registered
     let src5 = ISRC5Dispatcher { contract_address: account_address };
     assert!(src5.supports_interface(custom_interface_id), "Custom interface not registered");
+}
+
+#[test]
+fn test_upgrade_via_efo_succeeds() {
+    let src9 = setup_efo_test();
+    let account_address = src9.contract_address;
+
+    // Declare the upgrade target so replace_class_syscall can find the class.
+    declare_register_interfaces_eic();
+
+    // Calldata: upgrade(target, Option::None).
+    // In Cairo, Option::None has discriminant 1 (Some = 0, None = 1).
+    let upgrade_call = starknet::account::Call {
+        to: account_address,
+        selector: selector!("upgrade"),
+        calldata: array![FIXED_UPGRADE_TARGET_CLASS_HASH, 1].span() // 1 = Option::None
+    };
+    let outside_execution = build_outside_execution_with_calls(
+        array![upgrade_call].span(), NONCE_EFO_UPGRADE,
+    );
+
+    let mut spy = spy_events();
+    src9.execute_from_outside_v2(outside_execution, get_efo_upgrade_signature().span());
+
+    assert_upgraded_event(ref spy, account_address, FIXED_UPGRADE_TARGET_CLASS_HASH);
+}
+
+#[test]
+fn test_upgrade_via_real_tx_succeeds() {
+    let (account, account_address) = setup_validate_test();
+
+    // Declare the upgrade target so replace_class_syscall can find the class.
+    declare_register_interfaces_eic();
+
+    cheat_nonce(account_address, VALIDATE_NONCE_UPGRADE, CheatSpan::Indefinite);
+    cheat_signature(
+        account_address, get_validate_upgrade_signature().span(), CheatSpan::Indefinite,
+    );
+
+    // Calldata: upgrade(target, Option::None).
+    // In Cairo, Option::None has discriminant 1 (Some = 0, None = 1).
+    let upgrade_call = starknet::account::Call {
+        to: account_address,
+        selector: selector!("upgrade"),
+        calldata: array![FIXED_UPGRADE_TARGET_CLASS_HASH, 1].span() // 1 = Option::None
+    };
+
+    // Validate the signed upgrade transaction
+    let result = account.__validate__(array![upgrade_call]);
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED for upgrade tx");
+
+    // Execute via protocol (zero address caller).
+    // Use once-variant so the cheat doesn't also apply to the re-entrant upgrade call,
+    // which expects account_address as its caller (assert_only_self).
+    cheat_caller_address_once(
+        contract_address: account_address, caller_address: PROTOCOL_ADDRESS.try_into().unwrap(),
+    );
+    let mut spy = spy_events();
+    account.__execute__(array![upgrade_call]);
+
+    assert_upgraded_event(ref spy, account_address, FIXED_UPGRADE_TARGET_CLASS_HASH);
+}
+
+// ================================
+// is_valid_signature tests (ISRC6)
+// ================================
+
+#[test]
+fn test_is_valid_signature_truncated_hash_returns_invalid() {
+    let account = setup_initialized_account();
+
+    // Use the ownership message hash (truncated to fit felt252) and signature (5-felt format)
+    // Original: 0x3ce976d55131cd0bdd49f20afbded052d8e907dc6034d95cdf117a8fd7752e3c
+    // Only lower 251 bits fit in felt252
+    let msg_hash: felt252 = 0x3ce976d55131cd0bdd49f20afbded052d8e907dc6034d95cdf117a8fd7752e;
+    let signature = array![
+        0xe994c0e202b390bddaffacf04bdea826, // r_high
+        0xda47d5165a4577a024d18b8d61c5fe53, // r_low
+        0x2e117624d8cc474d0641c3168944eb67, // s_high
+        0x46dd0af587023ccad738aa0a82b05f98, // s_low
+        28 // v
+    ];
+
+    let result = account.is_valid_signature(msg_hash, signature);
+    assert!(result == 0, "Signature invalid for truncated hash");
+}
+
+#[test]
+fn test_is_valid_signature_with_chain_id_valid() {
+    let account = setup_initialized_account();
+
+    // Known good felt252 hash + signature for TEST_ETH_ADDRESS.
+    // Vector verified against on-chain is_valid_signature.
+    let msg_hash: felt252 = 0x9ef76cafa86fee7f1360c5df0868875116d63c2a5eaad26bd23a9a045321b;
+    let signature = array![
+        0x93fd5f812fbbe930977ca8ac1d7c1a1b, // r_high
+        0x2602e266add21880b89061774eab3f55, // r_low
+        0x1fb7aa49412cbcd146b1fcc1834dcbba, // s_high
+        0xefc75ce10df130b47fd99ba747cae707, // s_low
+        27, // v
+        1 // chain_id (ignored for is_valid_signature)
+    ];
+
+    let result = account.is_valid_signature(msg_hash, signature);
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED for known-good signature");
+}
+
+#[test]
+fn test_is_valid_signature_invalid() {
+    let account = setup_initialized_account();
+
+    // Wrong hash
+    let msg_hash: felt252 = 0x1234567890;
+    let signature = array![
+        0xe994c0e202b390bddaffacf04bdea826, // r_high
+        0xda47d5165a4577a024d18b8d61c5fe53, // r_low
+        0x2e117624d8cc474d0641c3168944eb67, // s_high
+        0x46dd0af587023ccad738aa0a82b05f98, // s_low
+        28 // v
+    ];
+
+    let result = account.is_valid_signature(msg_hash, signature);
+    assert!(result == 0, "Signature should be invalid for wrong hash");
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_is_valid_signature_too_short_reverts() {
+    let account = setup_initialized_account();
+    account.is_valid_signature(0x1234, array![0x1, 0x2, 0x3, 0x4]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_is_valid_signature_too_long_reverts() {
+    let account = setup_initialized_account();
+    account.is_valid_signature(0x1234, array![0x1, 0x2, 0x3, 0x4, 28, 1, 0x99]);
 }
 
 // ================================
@@ -199,6 +336,24 @@ fn test_execute_from_outside_invalid_signature_reverts() {
 }
 
 #[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_execute_from_outside_short_signature_reverts() {
+    let src9 = setup_efo_test();
+    let outside_execution = get_test_outside_execution();
+
+    src9.execute_from_outside_v2(outside_execution, array![0x1, 0x2, 0x3, 0x4, 28].span());
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_execute_from_outside_long_signature_reverts() {
+    let src9 = setup_efo_test();
+    let outside_execution = get_test_outside_execution();
+
+    src9.execute_from_outside_v2(outside_execution, array![0x1, 0x2, 0x3, 0x4, 28, 1, 0x99].span());
+}
+
+#[test]
 fn test_is_valid_outside_execution_nonce() {
     let (account_address, _) = deploy_eth712_account();
     let account_contract = IAccount712AdminDispatcher { contract_address: account_address };
@@ -230,7 +385,7 @@ fn test_execute_from_outside_different_evm_chain_id_succeeds() {
     // Signature generated with EVM chain ID 2 - valid because contract uses chain_id from signature
     let chain_id_2_signature = get_signature_evm_chain_id_2();
 
-    let _results = src9.execute_from_outside_v2(outside_execution, chain_id_2_signature.span());
+    src9.execute_from_outside_v2(outside_execution, chain_id_2_signature.span());
 }
 
 #[test]
@@ -276,11 +431,7 @@ fn test_execute_from_outside_wrong_contract_address_reverts() {
     src9.execute_from_outside_v2(outside_execution, wrong_contract_signature.span());
 }
 
-/// Test helper: arbitrary address for spender/recipient in tests.
-fn TEST_SPENDER() -> starknet::ContractAddress {
-    0x1234_felt252.try_into().unwrap()
-}
-
+/// Test helper: arbitrary address for recipient in tests.
 fn TEST_RECIPIENT() -> starknet::ContractAddress {
     0x5678_felt252.try_into().unwrap()
 }
@@ -291,44 +442,39 @@ fn TEST_RECIPIENT() -> starknet::ContractAddress {
 
 #[test]
 fn test_execute_from_outside_single_call_succeeds() {
-    let (src9, token_address, token) = setup_efo_test_with_erc20();
+    let (src9, _, token) = setup_efo_test_with_erc20();
 
-    // Build approve call: account approves spender for 500 tokens
-    let approve_amount: u256 = 500_u256;
-    let approve_call = build_approve_call(token_address, TEST_SPENDER(), approve_amount);
+    let approve_call = get_approve_call();
     let outside_execution = build_outside_execution_with_calls(
         array![approve_call].span(), NONCE_SINGLE_CALL,
     );
 
     src9.execute_from_outside_v2(outside_execution, get_single_call_approve_signature().span());
 
-    // Verify the approval was set
-    let allowance = token.allowance(src9.contract_address, TEST_SPENDER());
-    assert!(allowance == approve_amount, "Approval not set correctly");
+    let spender: starknet::ContractAddress = APPROVE_SPENDER.try_into().unwrap();
+    let allowance = token.allowance(src9.contract_address, spender);
+    assert!(allowance == APPROVE_AMOUNT, "Approval not set correctly");
 }
 
 #[test]
 fn test_execute_from_outside_multi_call_succeeds() {
     let (src9, token_address, token) = setup_efo_test_with_erc20();
 
-    // Build two calls: approve 500 + transfer 100
-    let approve_amount: u256 = 500_u256;
+    let approve_call = get_approve_call();
     let transfer_amount: u256 = 100_u256;
-    let approve_call = build_approve_call(token_address, TEST_SPENDER(), approve_amount);
     let transfer_call = build_transfer_call(token_address, TEST_RECIPIENT(), transfer_amount);
     let outside_execution = build_outside_execution_with_calls(
         array![approve_call, transfer_call].span(), NONCE_MULTI_CALL,
     );
 
-    // Record initial balances
     let account_address = src9.contract_address;
     let initial_account_balance = token.balance_of(account_address);
     let initial_recipient_balance = token.balance_of(TEST_RECIPIENT());
 
     src9.execute_from_outside_v2(outside_execution, get_multi_call_signature().span());
 
-    // Verify both side effects
-    assert!(token.allowance(account_address, TEST_SPENDER()) == approve_amount, "Approval failed");
+    let spender: starknet::ContractAddress = APPROVE_SPENDER.try_into().unwrap();
+    assert!(token.allowance(account_address, spender) == APPROVE_AMOUNT, "Approval failed");
     assert!(
         token.balance_of(account_address) == initial_account_balance - transfer_amount,
         "Account balance not reduced",
@@ -348,10 +494,8 @@ fn test_execute_from_outside_multi_call_succeeds() {
 fn test_execute_from_outside_multi_call_failure_propagates() {
     let (src9, token_address, _) = setup_efo_test_with_erc20();
 
-    // Build two calls: approve 500 (would succeed) + transfer more than balance (will fail)
-    let approve_amount: u256 = 500_u256;
+    let approve_call = get_approve_call();
     let transfer_amount: u256 = MOCK_ERC20_INITIAL_SUPPLY + 1_u256;
-    let approve_call = build_approve_call(token_address, TEST_SPENDER(), approve_amount);
     let transfer_call = build_transfer_call(token_address, TEST_RECIPIENT(), transfer_amount);
     let outside_execution = build_outside_execution_with_calls(
         array![approve_call, transfer_call].span(), NONCE_ATOMICITY,
@@ -405,4 +549,151 @@ fn test_execute_from_outside_wrong_caller_reverts() {
 
     // Should fail because caller doesn't match
     src9.execute_from_outside_v2(outside_execution, get_specific_caller_signature().span());
+}
+
+// ================================
+// __validate__ tests
+// ================================
+
+#[test]
+fn test_validate_success() {
+    let (account, account_address) = setup_validate_test();
+    let sig = get_validate_empty_calls_signature();
+    cheat_signature(account_address, sig.span(), CheatSpan::Indefinite);
+
+    let result = account.__validate__(array![]);
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED");
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE')]
+fn test_validate_invalid_signature_reverts() {
+    let (account, account_address) = setup_validate_test();
+    let garbage_sig = array![0x1, 0x2, 0x3, 0x4, 28, 1];
+    cheat_signature(account_address, garbage_sig.span(), CheatSpan::Indefinite);
+
+    account.__validate__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE')]
+fn test_validate_wrong_chain_id_reverts() {
+    let (account, account_address) = setup_validate_test();
+    // Signature was generated with SN_SEPOLIA domain, but chain_id is cheated to SN_MAIN
+    let sig = get_validate_wrong_chain_signature();
+    cheat_signature(account_address, sig.span(), CheatSpan::Indefinite);
+
+    account.__validate__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE')]
+fn test_validate_wrong_nonce_reverts() {
+    let (account, account_address) = setup_validate_test();
+    // Signature was generated with nonce=0, but we cheat nonce to 999
+    let sig = get_validate_empty_calls_signature();
+    cheat_signature(account_address, sig.span(), CheatSpan::Indefinite);
+    cheat_nonce(account_address, 999, CheatSpan::Indefinite);
+
+    account.__validate__(array![]);
+}
+
+#[test]
+fn test_validate_with_approve_call() {
+    let (account, account_address) = setup_validate_test();
+    let sig = get_validate_with_approve_signature();
+    cheat_signature(account_address, sig.span(), CheatSpan::Indefinite);
+    cheat_nonce(account_address, VALIDATE_NONCE_WITH_CALLS, CheatSpan::Indefinite);
+
+    let approve_call = get_approve_call();
+
+    let result = account.__validate__(array![approve_call]);
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED with approve call");
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_validate_short_signature_reverts() {
+    let (account, account_address) = setup_validate_test();
+    cheat_signature(account_address, array![0x1, 0x2, 0x3, 0x4, 28].span(), CheatSpan::Indefinite);
+
+    account.__validate__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_SIGNATURE_LENGTH')]
+fn test_validate_long_signature_reverts() {
+    let (account, account_address) = setup_validate_test();
+    cheat_signature(
+        account_address, array![0x1, 0x2, 0x3, 0x4, 28, 1, 0x99].span(), CheatSpan::Indefinite,
+    );
+
+    account.__validate__(array![]);
+}
+
+// ================================
+// __execute__ tests
+// ================================
+
+#[test]
+fn test_execute_from_protocol_succeeds() {
+    let (account, account_address) = setup_validate_test();
+    cheat_caller_address(
+        account_address, PROTOCOL_ADDRESS.try_into().unwrap(), CheatSpan::Indefinite,
+    );
+    cheat_transaction_version(account_address, 3, CheatSpan::Indefinite);
+
+    account.__execute__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_CALLER')]
+fn test_execute_invalid_caller_reverts() {
+    let (account, account_address) = setup_validate_test();
+    let external_caller: starknet::ContractAddress = 0xDEAD_felt252.try_into().unwrap();
+    cheat_caller_address(account_address, external_caller, CheatSpan::Indefinite);
+    cheat_transaction_version(account_address, 3, CheatSpan::Indefinite);
+
+    account.__execute__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_CALLER')]
+fn test_execute_from_self_reverts() {
+    let (account, account_address) = setup_validate_test();
+    // Self-calls are no longer allowed (protocol-only, matching OZ)
+    cheat_caller_address(account_address, account_address, CheatSpan::Indefinite);
+    cheat_transaction_version(account_address, 3, CheatSpan::Indefinite);
+
+    account.__execute__(array![]);
+}
+
+#[test]
+#[should_panic(expected: 'INVALID_TX_VERSION')]
+fn test_execute_invalid_tx_version_reverts() {
+    let (account, account_address) = setup_validate_test();
+    cheat_caller_address(
+        account_address, PROTOCOL_ADDRESS.try_into().unwrap(), CheatSpan::Indefinite,
+    );
+    cheat_transaction_version(account_address, 1, CheatSpan::Indefinite);
+
+    account.__execute__(array![]);
+}
+
+#[test]
+fn test_execute_with_erc20_call() {
+    let (account, account_address) = setup_validate_test();
+    let (_, token) = deploy_mock_erc20(account_address);
+
+    cheat_caller_address(
+        account_address, PROTOCOL_ADDRESS.try_into().unwrap(), CheatSpan::Indefinite,
+    );
+    cheat_transaction_version(account_address, 3, CheatSpan::Indefinite);
+
+    let approve_call = get_approve_call();
+    account.__execute__(array![approve_call]);
+
+    let spender: starknet::ContractAddress = APPROVE_SPENDER.try_into().unwrap();
+    let allowance = token.allowance(account_address, spender);
+    assert!(allowance == APPROVE_AMOUNT, "Approval not set correctly");
 }

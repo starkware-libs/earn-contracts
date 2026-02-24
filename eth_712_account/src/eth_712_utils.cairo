@@ -1,6 +1,7 @@
 use core::integer::u256;
 use core::keccak::compute_keccak_byte_array;
 use openzeppelin::account::extensions::src9::OutsideExecution;
+use starknet::ResourcesBounds;
 use starknet::account::Call;
 use starknet::eth_address::EthAddress;
 use starknet::eth_signature::public_key_point_to_eth_address;
@@ -15,8 +16,22 @@ const EIP712_DOMAIN_TYPE_HASH: u256 =
 const CALL_TYPE_HASH: u256 =
     0x7793b9bed3b87c6119fe923f0da4e85e1f97a03272a446514622ee7bd62ad25f_u256;
 
+// keccak256("OutsideExecution(Call[] calls,uint256 caller,uint256 nonce,uint256
+// execute_after,uint256 execute_before)Call(...)")
 const OUTSIDE_EXECUTION_TYPE_HASH: u256 =
     0x57fbef2abe14202f3651b3935a8feddd357b8f83a862e046239d196ec76f281e_u256;
+
+// EIP-712 encodeType hash for TransactionMetadata
+// keccak256("TransactionMetadata(uint256 version,uint256 chain_id,uint256[]
+// execution_resources,uint256 tip,uint256 nonce)")
+const TRANSACTION_METADATA_TYPE_HASH: u256 =
+    0x3e1a84b9a25a2ffe216927b61cc91a10921dabd3305985281d0bb9707b0d8310_u256;
+
+// EIP-712 encodeType hash for Transaction (includes referenced types sorted alphabetically)
+// keccak256("Transaction(Call[] calls,TransactionMetadata
+// metadata)Call(...)TransactionMetadata(...)")
+const TRANSACTION_TYPE_HASH: u256 =
+    0x1dc45489b8d4418703686ca441c4ea8ead534ff02815a47b9059490edf3a0c68_u256;
 
 // keccak("2") (version of the EIP-712 domain).
 const VERSION_HASH: u256 = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5_u256;
@@ -25,6 +40,29 @@ const VERSION_HASH: u256 = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673
 // msg_hash of the account ownership message. (Fixed per all chains).
 const OWNERSHIP_TRANSFER_MSG_HASH: u256 =
     0x3ce976d55131cd0bdd49f20afbded052d8e907dc6034d95cdf117a8fd7752e3c_u256;
+
+// Transaction version validation constants
+pub const MIN_TRANSACTION_VERSION: u256 = 3;
+pub const QUERY_OFFSET: u256 = 0x100000000000000000000000000000000;
+
+// ================================
+// Transaction types for __validate__
+// ================================
+
+#[derive(Drop)]
+pub struct TransactionMetadata {
+    pub version: felt252,
+    pub chain_id: felt252,
+    pub execution_resources: Span<felt252>,
+    pub tip: felt252,
+    pub nonce: felt252,
+}
+
+#[derive(Drop)]
+pub struct Transaction {
+    pub calls: Span<Call>,
+    pub metadata: @TransactionMetadata,
+}
 
 /// Adds a felt252 to the byte array (as 32 bytes).
 fn push_felt(ref res: ByteArray, val: felt252) {
@@ -87,6 +125,46 @@ pub fn push_outside_execution(ref res: ByteArray, outside_execution: @OutsideExe
     push_keccak(ref res, @byte_array);
 }
 
+// ================================
+// Transaction hashing functions
+// ================================
+
+pub fn push_metadata(ref res: ByteArray, metadata: @TransactionMetadata) {
+    let mut byte_array: ByteArray = "";
+    push_u256(ref byte_array, TRANSACTION_METADATA_TYPE_HASH);
+
+    push_felt(ref byte_array, *metadata.version);
+    push_felt(ref byte_array, *metadata.chain_id);
+    push_felt_array(ref byte_array, *metadata.execution_resources);
+    push_felt(ref byte_array, *metadata.tip);
+    push_felt(ref byte_array, *metadata.nonce);
+
+    push_keccak(ref res, @byte_array);
+}
+
+pub fn push_transaction(ref res: ByteArray, transaction: @Transaction) {
+    let mut byte_array: ByteArray = "";
+    push_u256(ref byte_array, TRANSACTION_TYPE_HASH);
+
+    push_call_array(ref byte_array, *transaction.calls);
+    push_metadata(ref byte_array, *transaction.metadata);
+
+    push_keccak(ref res, @byte_array);
+}
+
+pub fn get_transaction_hash(transaction: @Transaction, chain_id: felt252) -> u256 {
+    let mut byte_array: ByteArray = "";
+
+    // EIP-191 header.
+    byte_array.append_byte(0x19);
+    byte_array.append_byte(0x1);
+
+    push_domain_separator(ref byte_array, chain_id);
+    push_transaction(ref byte_array, transaction);
+
+    reverse_u256(compute_keccak_byte_array(@byte_array))
+}
+
 pub fn push_domain_separator(ref res: ByteArray, chain_id: felt252) {
     let mut byte_array: ByteArray = "";
 
@@ -147,14 +225,57 @@ pub fn extract_signature(signature: Span<felt252>) -> (Signature, felt252) {
 }
 
 /// Returns `true` if the signature is valid for the given message hash and eth address.
-pub fn is_valid_signature(msg_hash: u256, signature: Signature, eth_address: EthAddress) -> bool {
+pub fn is_valid_eth_signature(
+    msg_hash: u256, signature: Signature, eth_address: EthAddress,
+) -> bool {
     recover_eth_address(:msg_hash, :signature) == Some(eth_address)
+}
+
+/// Extract signature - accepts 5 or 6 felts.
+/// 5 felts: [r_high, r_low, s_high, s_low, v]
+/// 6 felts: [r_high, r_low, s_high, s_low, v, chain_id] - chain_id ignored
+pub fn extract_signature_flexible(signature: Span<felt252>) -> Signature {
+    assert(signature.len() == 5 || signature.len() == 6, 'INVALID_SIGNATURE_LENGTH');
+    let r_high: u128 = (*signature[0]).try_into().unwrap();
+    let r_low: u128 = (*signature[1]).try_into().unwrap();
+    let s_high: u128 = (*signature[2]).try_into().unwrap();
+    let s_low: u128 = (*signature[3]).try_into().unwrap();
+    let v: u128 = (*signature[4]).try_into().unwrap();
+    Signature {
+        r: u256 { low: r_low, high: r_high },
+        s: u256 { low: s_low, high: s_high },
+        y_parity: v % 2 == 0,
+    }
+}
+
+/// Converts resource bounds to a span of felt252 for EIP-712 hashing.
+pub fn resource_bounds_as_felts(resource_bounds: Span<ResourcesBounds>) -> Span<felt252> {
+    let mut rb_felts: Array<felt252> = array![];
+    for res in resource_bounds {
+        rb_felts.append(*res.resource);
+        rb_felts.append((*res.max_amount).into());
+        rb_felts.append((*res.max_price_per_unit).into());
+    }
+    rb_felts.span()
+}
+
+/// Validates that the transaction version is supported (v3 or query v3).
+pub fn is_tx_version_valid() -> bool {
+    let tx_info = starknet::get_tx_info().unbox();
+    let tx_version: u256 = tx_info.version.into();
+    if tx_version >= QUERY_OFFSET {
+        tx_version >= QUERY_OFFSET + MIN_TRANSACTION_VERSION
+    } else {
+        tx_version >= MIN_TRANSACTION_VERSION
+    }
 }
 
 /// Asserts eth address ownership signature is valid.
 pub fn assert_valid_owner(eth_address: EthAddress, signature: Signature) {
     let msg_hash = OWNERSHIP_TRANSFER_MSG_HASH;
-    assert(is_valid_signature(:msg_hash, :signature, :eth_address), 'INVALID_OWNERSHIP_SIGNATURE');
+    assert(
+        is_valid_eth_signature(:msg_hash, :signature, :eth_address), 'INVALID_OWNERSHIP_SIGNATURE',
+    );
 }
 
 fn sn_chain_id_keccak() -> u256 {

@@ -2,23 +2,46 @@ use core::serde::Serde;
 use eth_712_account::interface::{IAccount712AdminDispatcher, IAccount712AdminDispatcherTrait};
 use openzeppelin::account::extensions::src9::OutsideExecution;
 use openzeppelin::account::extensions::src9::interface::ISRC9_V2Dispatcher;
+use openzeppelin::account::interface::ISRC6Dispatcher;
 use openzeppelin::token::erc20::interface::IERC20Dispatcher;
 use snforge_std::cheatcodes::CheatSpan;
-use snforge_std::{ContractClassTrait, DeclareResultTrait, cheat_block_timestamp, cheat_chain_id};
+use snforge_std::{
+    ContractClassTrait, DeclareResultTrait, EventSpyTrait, cheat_block_timestamp, cheat_chain_id,
+    cheat_nonce, cheat_resource_bounds, cheat_tip, cheat_transaction_version,
+};
 use starknet::account::Call;
 use starknet::secp256_trait::Signature;
-use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
+use starknet::{ClassHash, ContractAddress, EthAddress, ResourcesBounds, SyscallResultTrait};
+use testing_utils::event_helpers::get_event_by_selector;
+
+// ================================
+// Fixed addresses for deterministic signatures
+// ================================
+// These addresses are used with deploy_at to ensure signatures remain valid
+// regardless of contract code changes.
+
+/// Fixed account contract address for EFO tests.
+/// All pre-computed signatures use this address in the domain separator.
+pub const FIXED_ACCOUNT_ADDRESS: felt252 = 0x07120acc07120acc07120acc07120acc;
+
+/// Fixed ERC20 mock address for EFO tests with calls.
+/// All pre-computed signatures involving ERC20 calls use this address.
+pub const FIXED_ERC20_ADDRESS: felt252 = 0x0e2c200e2c200e2c200e2c200e2c2000;
+
+/// Protocol address (zero) used as caller for __execute__.
+pub const PROTOCOL_ADDRESS: felt252 = 0;
+
+/// Class hash of the RegisterInterfacesEIC contract, used as upgrade target in signing tests.
+/// Must match FIXED_UPGRADE_TARGET_CLASS_HASH in generate_test_signatures.py.
+/// Re-run generate_test_signatures.py after recompiling if this contract changes.
+pub const FIXED_UPGRADE_TARGET_CLASS_HASH: felt252 =
+    0x4775e80641f54baffdce08e82de59d491bc9cbef8d674c7f76f94c2b80b1035;
 
 /// Test Ethereum address corresponding to private key:
 /// 0xa6d86467b6ec9e161649b27edfd8519e75a2e1cf5f4c309c628706e6999780e8
 /// Address: 0xbF60187c5dFfA627249f1C3000A4168dbB9D7A1A
 pub fn TEST_ETH_ADDRESS() -> EthAddress {
     0xbF60187c5dFfA627249f1C3000A4168dbB9D7A1A_felt252.try_into().unwrap()
-}
-
-/// A different Ethereum address for testing invalid cases.
-pub fn WRONG_ETH_ADDRESS() -> EthAddress {
-    0x1234567890123456789012345678901234567890_felt252.try_into().unwrap()
 }
 
 /// Returns the ownership signature for TEST_ETH_ADDRESS.
@@ -50,19 +73,41 @@ pub fn get_invalid_signature() -> Signature {
     }
 }
 
-/// Declare and deploy the StarknetEth712Account contract.
+/// Declare and deploy the StarknetEth712Account contract at FIXED_ACCOUNT_ADDRESS.
 /// Returns the contract address and the class hash.
 pub fn deploy_eth712_account() -> (ContractAddress, ClassHash) {
     let contract_class = snforge_std::declare("StarknetEth712Account")
         .unwrap_syscall()
         .contract_class();
-    let (contract_address, _) = contract_class.deploy(@array![]).unwrap_syscall();
+    let fixed_address: ContractAddress = FIXED_ACCOUNT_ADDRESS.try_into().unwrap();
+    let (contract_address, _) = contract_class.deploy_at(@array![], fixed_address).unwrap_syscall();
     (contract_address, *contract_class.class_hash)
 }
 
 /// Declare the RegisterInterfacesEIC contract and return its class hash.
 pub fn declare_register_interfaces_eic() -> ClassHash {
     *snforge_std::declare("RegisterInterfacesEIC").unwrap_syscall().contract_class().class_hash
+}
+
+/// Deploy, initialize, and return an ISRC6Dispatcher for the account.
+pub fn setup_initialized_account() -> ISRC6Dispatcher {
+    let (account_address, _) = deploy_eth712_account();
+    let account_contract = IAccount712AdminDispatcher { contract_address: account_address };
+    account_contract.initialize(TEST_ETH_ADDRESS(), get_ownership_signature());
+    ISRC6Dispatcher { contract_address: account_address }
+}
+
+/// Assert that an "Upgraded" event was emitted from the expected address with the expected class
+/// hash.
+pub fn assert_upgraded_event(
+    ref spy: snforge_std::EventSpy, account_address: ContractAddress, expected_class_hash: felt252,
+) {
+    let events = spy.get_events();
+    let event_option = get_event_by_selector(events.events.span(), selector!("Upgraded"));
+    assert!(event_option.is_some(), "Upgraded event not found");
+    let (from, event) = event_option.unwrap();
+    assert!(*from == account_address, "Event from wrong address");
+    assert!(*event.data.at(0) == expected_class_hash, "Wrong class hash in event");
 }
 
 // ================================
@@ -95,11 +140,43 @@ pub fn setup_efo_test_with_erc20() -> (ISRC9_V2Dispatcher, ContractAddress, IERC
 }
 
 // ================================
+// __validate__ / __execute__ test setup
+// ================================
+
+/// Fixed resource bounds for __validate__ tests.
+/// Must match VALIDATE_RESOURCE_BOUNDS in generate_test_signatures.py.
+pub fn validate_resource_bounds() -> Span<ResourcesBounds> {
+    array![
+        ResourcesBounds { resource: 'L1_GAS', max_amount: 100, max_price_per_unit: 1000 },
+        ResourcesBounds { resource: 'L2_GAS', max_amount: 200, max_price_per_unit: 2000 },
+        ResourcesBounds { resource: 'L1_DATA', max_amount: 300, max_price_per_unit: 3000 },
+    ]
+        .span()
+}
+
+/// Setup an initialized account with all tx_info fields cheated for __validate__/__execute__ tests.
+/// Cheats: chain_id, version, nonce, resource_bounds, tip.
+/// Signature must be cheated separately per test.
+/// Returns (src6_dispatcher, account_address).
+pub fn setup_validate_test() -> (ISRC6Dispatcher, ContractAddress) {
+    let (account_address, _) = deploy_eth712_account();
+    let account_contract = IAccount712AdminDispatcher { contract_address: account_address };
+    account_contract.initialize(TEST_ETH_ADDRESS(), get_ownership_signature());
+
+    cheat_chain_id(account_address, 'SN_MAIN', CheatSpan::Indefinite);
+    cheat_transaction_version(account_address, 3, CheatSpan::Indefinite);
+    cheat_nonce(account_address, VALIDATE_NONCE_EMPTY, CheatSpan::Indefinite);
+    cheat_resource_bounds(account_address, validate_resource_bounds(), CheatSpan::Indefinite);
+    cheat_tip(account_address, 0, CheatSpan::Indefinite);
+
+    (ISRC6Dispatcher { contract_address: account_address }, account_address)
+}
+
+// ================================
 // OutsideExecution test fixtures
 // ================================
 
 /// Fixed timestamps for testing execute_from_outside_v2.
-/// Use warp() to set block timestamp to TEST_TIMESTAMP.
 pub const EXECUTE_AFTER: u64 = 1000;
 pub const EXECUTE_BEFORE: u64 = 3000;
 pub const TEST_TIMESTAMP: u64 = 2000;
@@ -120,26 +197,6 @@ pub fn get_test_outside_execution() -> OutsideExecution {
     }
 }
 
-/// Returns the pre-computed signature for the test OutsideExecution.
-/// This signature was generated using the Python script with:
-/// - Contract address: 0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4
-/// - ETH address: 0xbF60187c5dFfA627249f1C3000A4168dbB9D7A1A
-/// - Domain: SN_MAIN, version 2, chainId 1
-/// - OutsideExecution: caller=ANY_CALLER, nonce=1, execute_after=1000, execute_before=3000,
-/// calls=[]
-///
-/// Format: [r_high, r_low, s_high, s_low, v, chain_id]
-pub fn get_outside_execution_signature() -> Array<felt252> {
-    array![
-        0xa97889fc4116632d7b0cbc136257ebdf, // r_high
-        0xf2e7384ae672ce351da295c704e0265a, // r_low
-        0x4b52469cfdda3614944d145122ee96ab, // s_high
-        0xca19b48f5b51afacc161928fe72cdf69, // s_low
-        28, // v
-        1 // chain_id (EVM=Ethereum)
-    ]
-}
-
 /// Returns an invalid signature for testing signature validation.
 pub fn get_invalid_outside_execution_signature() -> Array<felt252> {
     array![
@@ -152,44 +209,6 @@ pub fn get_invalid_outside_execution_signature() -> Array<felt252> {
     ]
 }
 
-/// Returns a signature with Chain ID=2 (instead of the usual 1).
-pub fn get_signature_evm_chain_id_2() -> Array<felt252> {
-    array![
-        0xe2aebdd44a9a03902eedb97065c2c279, // r_high
-        0xfcfd2f2325c7a0bc4af74252f84b10b, // r_low
-        0x73394d79eeda1d151b2facdcb2c9bd91, // s_high
-        0x69b65ab69e218022a936846ea383df37, // s_low
-        27, // v
-        2 // chain_id: Not Ethereum
-    ]
-}
-
-/// Returns a signature with WRONG Starknet chain name (SN_SEPOLIA instead of SN_MAIN).
-/// This should fail signature validation because the domain separator is different.
-pub fn get_signature_wrong_sn_chain_name() -> Array<felt252> {
-    array![
-        0x4ac352e68f296423e4f628aa8f632a9b, // r_high
-        0x48b6738df23e337034763d57868522bf, // r_low
-        0x3a03669270b5ad9fa6817c7079724802, // s_high
-        0x8db208ab4e2089aa7dfaa5eee2864132, // s_low
-        28, // v
-        1 // chain_id
-    ]
-}
-
-/// Returns a signature with WRONG target contract address.
-/// This should fail signature validation because the domain separator is different.
-pub fn get_signature_wrong_contract_address() -> Array<felt252> {
-    array![
-        0x40b3c6efc80e9325f49b1a5c4a38f21c, // r_high
-        0xd42f46f2833f2388054df879ee09475e, // r_low
-        0x239eec5938ebaa0f4ce69664f17727ac, // s_high
-        0xd75388e53f1099eaae03b1ac49d0227a, // s_low
-        28, // v
-        1 // chain_id
-    ]
-}
-
 // ================================
 // ERC20 Mock helpers for execute_from_outside tests
 // ================================
@@ -197,48 +216,45 @@ pub fn get_signature_wrong_contract_address() -> Array<felt252> {
 /// Initial supply for mock ERC20 token.
 pub const MOCK_ERC20_INITIAL_SUPPLY: u256 = 1000_u256;
 
-/// Deploy a mock ERC20 token with initial supply minted to the specified owner.
+/// Deploy a mock ERC20 token at FIXED_ERC20_ADDRESS with initial supply minted to the owner.
 /// Returns (token_address, dispatcher).
 pub fn deploy_mock_erc20(owner: ContractAddress) -> (ContractAddress, IERC20Dispatcher) {
     let contract_class = snforge_std::declare("DualCaseERC20Mock")
         .unwrap_syscall()
         .contract_class();
 
-    // Constructor args: name (ByteArray), symbol (ByteArray), decimals (u8), initial_supply (u256),
-    // recipient (ContractAddress)
+    // Constructor: (name, symbol, decimals, initial_supply, recipient)
     let mut calldata: Array<felt252> = array![];
-
-    // name: ByteArray - serialize properly
     let name: ByteArray = "MockToken";
     name.serialize(ref calldata);
-
-    // symbol: ByteArray - serialize properly
     let symbol: ByteArray = "MTK";
     symbol.serialize(ref calldata);
-
-    // decimals: u8
     let decimals: u8 = 18;
     decimals.serialize(ref calldata);
-
-    // initial_supply: u256
     MOCK_ERC20_INITIAL_SUPPLY.serialize(ref calldata);
-
-    // recipient: ContractAddress
     owner.serialize(ref calldata);
 
-    let (token_address, _) = contract_class.deploy(@calldata).unwrap_syscall();
+    let fixed_address: ContractAddress = FIXED_ERC20_ADDRESS.try_into().unwrap();
+    let (token_address, _) = contract_class.deploy_at(@calldata, fixed_address).unwrap_syscall();
     let dispatcher = IERC20Dispatcher { contract_address: token_address };
     (token_address, dispatcher)
 }
 
-/// Build an approve Call for ERC20.
-pub fn build_approve_call(
-    token_address: ContractAddress, spender: ContractAddress, amount: u256,
-) -> Call {
+/// Fixed spender address used in pre-computed approve call signatures.
+pub const APPROVE_SPENDER: felt252 = 0x1234;
+
+/// Fixed approve amount used in pre-computed approve call signatures.
+pub const APPROVE_AMOUNT: u256 = 500_u256;
+
+/// Returns the fixture approve Call matching pre-computed signatures.
+pub fn get_approve_call() -> Call {
+    let token_address: ContractAddress = FIXED_ERC20_ADDRESS.try_into().unwrap();
+    let spender: ContractAddress = APPROVE_SPENDER.try_into().unwrap();
     Call {
         to: token_address,
         selector: selector!("approve"),
-        calldata: array![spender.into(), amount.low.into(), amount.high.into()].span(),
+        calldata: array![spender.into(), APPROVE_AMOUNT.low.into(), APPROVE_AMOUNT.high.into()]
+            .span(),
     }
 }
 
@@ -253,11 +269,17 @@ pub fn build_transfer_call(
     }
 }
 
-/// Nonces for different test scenarios (to avoid conflicts).
+/// EFO nonces for different test scenarios (to avoid conflicts).
 pub const NONCE_SINGLE_CALL: felt252 = 100;
 pub const NONCE_MULTI_CALL: felt252 = 101;
 pub const NONCE_ATOMICITY: felt252 = 102;
 pub const NONCE_SPECIFIC_CALLER: felt252 = 103;
+pub const NONCE_EFO_UPGRADE: felt252 = 200;
+
+/// __validate__ nonces matching generate_test_signatures.py.
+pub const VALIDATE_NONCE_EMPTY: felt252 = 0;
+pub const VALIDATE_NONCE_WITH_CALLS: felt252 = 1;
+pub const VALIDATE_NONCE_UPGRADE: felt252 = 2;
 
 /// Specific caller address for testing non-ANY_CALLER scenarios.
 pub const SPECIFIC_CALLER: felt252 = 0xCAFE;
@@ -266,10 +288,10 @@ pub const SPECIFIC_CALLER: felt252 = 0xCAFE;
 pub fn build_outside_execution_with_calls(calls: Span<Call>, nonce: felt252) -> OutsideExecution {
     OutsideExecution {
         caller: ANY_CALLER.try_into().unwrap(),
-        nonce: nonce,
+        nonce,
         execute_after: EXECUTE_AFTER,
         execute_before: EXECUTE_BEFORE,
-        calls: calls,
+        calls,
     }
 }
 
@@ -278,74 +300,119 @@ pub fn build_outside_execution_with_specific_caller(
     nonce: felt252, caller: ContractAddress,
 ) -> OutsideExecution {
     OutsideExecution {
-        caller: caller,
-        nonce: nonce,
+        caller,
+        nonce,
         execute_after: EXECUTE_AFTER,
         execute_before: EXECUTE_BEFORE,
         calls: array![].span(),
     }
 }
 
-// ================================
-// Signatures for execute_from_outside tests with calls
-// ================================
-// NOTE: These signatures are generated by scripts/generate_test_signatures.py
-// and must be regenerated if any test parameters change.
-// The signatures depend on: contract_address, token_address, call parameters, nonce.
-// Pre-computed for:
-// - Contract: 0x651b6cc1595bcd7edddc42163b57e066956b8fba487dd781cd7e4b3a671ffe4
-// - Token: 0x405ea0439568d265140400aa7b31e896604406bdfa7e73e18dec06303c31c6c
-// - Spender: 0x1234, Recipient: 0x5678
+// GENERATED-SIGNATURES-START (by scripts/generate_test_signatures.py -- do not edit manually)
 
-/// Signature for single approve call test.
-/// OutsideExecution with nonce=100, approve 500 tokens to spender.
+/// EFO signature: empty calls, nonce=1, chain_id=1.
+pub fn get_outside_execution_signature() -> Array<felt252> {
+    array![
+        0x7ffb66a7163f54ab83a435079d74198d, 0x5ceb653460c57bda62685e60d4b67dc9,
+        0x7c07a7689645c4ec1775cd794e6a6bdc, 0xfaecbd63a4629b6e3d43e88568000326, 27, 1,
+    ]
+}
+
+/// EFO signature: empty calls, nonce=1, chain_id=2.
+pub fn get_signature_evm_chain_id_2() -> Array<felt252> {
+    array![
+        0x18a89b5013e9920a4a6a7f68a96e7ae4, 0xaedf914a0262920a3587429fbe9fc6a1,
+        0x71d90cd8ba933785e1f9310f75527dc4, 0x4af653a5e6924e30858c257ad6dc36bd, 28, 2,
+    ]
+}
+
+/// EFO signature signed with SN_SEPOLIA domain (fails against SN_MAIN).
+pub fn get_signature_wrong_sn_chain_name() -> Array<felt252> {
+    array![
+        0x17ffed4d61c7339e41abad0f195e514f, 0x12fc8d4f5d27d5e2465955842e13c655,
+        0x68f5bb339084078d1a34bbed9c5a3c52, 0xaf67088632eee196f68414a550359178, 28, 1,
+    ]
+}
+
+/// EFO signature signed with wrong contract address (domain mismatch).
+pub fn get_signature_wrong_contract_address() -> Array<felt252> {
+    array![
+        0x060836bf3cbe32460860af643ccd889d, 0x31673c0a6f4686d5cd41c9003f390a81,
+        0x1d39adf7397f46f16ca26ee7979844eb, 0xd88fdcb5a1f5602ad4d95c8cf0ada12a, 28, 1,
+    ]
+}
+
+/// EFO signature: approve(0x1234, 500), nonce=100.
 pub fn get_single_call_approve_signature() -> Array<felt252> {
     array![
-        0x1df31ee91675558108ce242888ccbf09, // r_high
-        0xce39f1955774fd02a7c93cb9a7ccf33b, // r_low
-        0x1b35465d87708c6d1c70d216e91b6a79, // s_high
-        0x916b0be291ada83ecea84291854f2e98, // s_low
-        27, // v
-        1 // chain_id (EVM)
+        0x964d17d195fc47aba6702c78cbb8efc2, 0x9f154a7cb4f786c87247bb20aaef2800,
+        0x4fb1263e4d824bf8886d1809927e10b3, 0x0630802ef735ec030b55521174002356, 27, 1,
     ]
 }
 
-/// Signature for multi-call test (approve 500 + transfer 100).
-/// OutsideExecution with nonce=101, two calls.
+/// EFO signature: approve(500) + transfer(100), nonce=101.
 pub fn get_multi_call_signature() -> Array<felt252> {
     array![
-        0xe823335915d3f9c1a8cf05182f4d5366, // r_high
-        0xa83e96990bab81e018fd27aa284c0ad0, // r_low
-        0x7c4d2c87ace56a14eb444063a5bdb343, // s_high
-        0xf23b9d84fc44d9a10fbb0abb7cfa2bad, // s_low
-        28, // v
-        1 // chain_id (EVM)
+        0xb914302a1acb85e3f6b155625fea3dad, 0x9e0069305c9c2cc94ec6180529e265ce,
+        0x2fe4565842cb96b600ff4c58e45b55e6, 0xd55a87fddd1cc8e553dca9a7456d465e, 27, 1,
     ]
 }
 
-/// Signature for atomicity test (approve 500 + transfer 1001 - fails).
-/// OutsideExecution with nonce=102, second call will fail due to insufficient balance.
+/// EFO signature: approve(500) + transfer(1001, fails), nonce=102.
 pub fn get_atomicity_test_signature() -> Array<felt252> {
     array![
-        0xd0cbbfc6638e59a5e3b576ae9b2305dd, // r_high
-        0xbabcee977ce0c6b0ee9ece7f944dbce3, // r_low
-        0x6f27c710ab23db5cf1e101e87602d5fd, // s_high
-        0x9170f7129929d19c9a6234d0797ca300, // s_low
-        28, // v
-        1 // chain_id (EVM)
+        0x1609bcddfc92674937de1c281392b0ea, 0xb96e843d8911d3e009ce55aecdca7ab4,
+        0x110742199fc56f913d2eeab31f8c5251, 0x53c98399effa51de52da5a029b57e578, 28, 1,
     ]
 }
 
-/// Signature for specific caller test.
-/// OutsideExecution with nonce=103, caller=0xCAFE, empty calls.
-/// Used for testing non-ANY_CALLER scenarios.
+/// EFO signature: specific caller=0xCAFE, nonce=103, empty calls.
 pub fn get_specific_caller_signature() -> Array<felt252> {
     array![
-        0x661b512c1158c255c61c5f0214f167c7, // r_high
-        0x961538890df420779799bd7a8d236e06, // r_low
-        0x3fbcc975607ffe4640fc6c175ee5cdae, // s_high
-        0x5fc913ba9a2de3bbe95914339a7a8666, // s_low
-        27, // v
-        1 // chain_id (EVM)
+        0xa9855b38d21f9f8aea399f9a1d187319, 0xc8f9e2b75f011d953bb7206bd62fd0c6,
+        0x640bd21aa3ccccfa412427e8a0ceeed3, 0xee65414d86523ac9b8772e99468d7e80, 27, 1,
     ]
 }
+
+/// __validate__ signature: empty calls, nonce=0.
+pub fn get_validate_empty_calls_signature() -> Array<felt252> {
+    array![
+        0x0c7ab95484df32ee1f457501214b5c51, 0x0fd461a1c92f777d97545e640f893731,
+        0x78afd3e69cdf4b6c57b49b8fd719ff0e, 0x24553f8f1b1cdb5121ef8641a2dbcab5, 28, 1,
+    ]
+}
+
+/// __validate__ signature: approve(0x1234, 500), nonce=1.
+pub fn get_validate_with_approve_signature() -> Array<felt252> {
+    array![
+        0xfdf4a332c8f6bded4b9670e59d8d90e6, 0xb1c10fd29b606f3522c62fc237d5ec1f,
+        0x7a4518381cf3240b4b96169848677726, 0xf642df7a6d69205f1f390f6205adab44, 27, 1,
+    ]
+}
+
+/// __validate__ signature signed with SN_SEPOLIA domain (fails against SN_MAIN).
+pub fn get_validate_wrong_chain_signature() -> Array<felt252> {
+    array![
+        0x455a3be29526aebe2731210b357f666b, 0x1ca8edb5a5e21e7f16f9b2d663fe0141,
+        0x629a920e9971312499308cbadf8d0d25, 0xb406cd3e690bead8d1923dfd93a5a466, 28, 1,
+    ]
+}
+
+/// EFO signature: upgrade(FIXED_UPGRADE_TARGET_CLASS_HASH, None), nonce=200.
+pub fn get_efo_upgrade_signature() -> Array<felt252> {
+    array![
+        0xa5bf0961e796aa50e1c3e7fea52d8f85, 0x5ef33aa9e631ac4b43cadc46ce8f0ec4,
+        0x6b48aa24b15cf9f0d7e8bdd0d880aa61, 0x5e9a9cbaa86bca675b873ca30aafe49f, 28, 1,
+    ]
+}
+
+/// __validate__ signature: upgrade(FIXED_UPGRADE_TARGET_CLASS_HASH, None), nonce=2.
+pub fn get_validate_upgrade_signature() -> Array<felt252> {
+    array![
+        0xb4146b116881b636b3e5df03f3d88139, 0x522594e6adbc196ed5747efc87f8e896,
+        0x77d92acd1c9e71fc89917065b8bb20d7, 0xfcdbe021378a82e41a644300aa089f2d, 28, 1,
+    ]
+}
+// GENERATED-SIGNATURES-END
+
+
