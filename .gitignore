@@ -3,3 +3,4 @@ venv*/
 target/
 .spr.yml
 .snfoundry_cache/
+.gstack/
