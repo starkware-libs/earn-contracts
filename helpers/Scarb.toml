@@ -1,18 +1,16 @@
 [package]
-name = "account_factory"
+name = "helpers"
 edition.workspace = true
 version.workspace = true
 
 [lib]
 
 [dependencies]
-contracts = { path = "../contracts" }
-openzeppelin.workspace = true
 starknet.workspace = true
-starkware_utils.workspace = true
+openzeppelin.workspace = true
+account_factory = { path = "../account_factory" }
 
 [dev-dependencies]
-assert_macros.workspace = true
 snforge_std.workspace = true
 starkware_utils_testing.workspace = true
 testing_utils = { path = "../testing_utils" }
@@ -26,8 +24,10 @@ build-external-contracts = [
     "contracts::primer::primer::Primer",
     "testing_utils::dummy_contracts::DummyEthAddressContract",
     "testing_utils::dummy_contracts::SecondDummyEthAddressContract",
+    "testing_utils::dummy_contracts::MockOutsideExecutionTarget",
+    "account_factory::account_factory::AccountFactory",
 ]
-name = "account_factory_unittest"
+name = "helpers_unittest"
 
 [profile.dev.cairo]
 unstable-add-statements-functions-debug-info = true

@@ -3,7 +3,16 @@ use starknet::{ClassHash, EthAddress};
 
 #[starknet::interface]
 pub trait IAccount712Admin<TContractState> {
-    fn initialize(ref self: TContractState, eth_address: EthAddress, signature: Signature);
+    /// Bind the account to an owner key, identified by its Ethereum-format address.
+    ///
+    /// `owner_eth_address` is the secp256k1 public-key derived Ethereum-format address
+    /// of whichever key will sign future `execute_from_outside_v2` calls. Under the
+    /// Tier 2 unlinkable flow this is a fresh "session" key derived from a one-time
+    /// MetaMask bootstrap signature — it is intentionally NOT the user's real MM
+    /// address; nothing on chain ties this value back to the user's Ethereum identity.
+    fn initialize(
+        ref self: TContractState, owner_eth_address: EthAddress, signature: Signature,
+    );
     fn upgrade(
         ref self: TContractState,
         new_class_hash: ClassHash,

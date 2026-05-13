@@ -15,11 +15,11 @@ use testing_utils::event_helpers::{get_event_by_selector, get_event_by_selector_
 
 
 fn deploy_account_wrapper(
-    account_factory_addr: ContractAddress, eth_address: EthAddress,
+    account_factory_addr: ContractAddress, session_eth_address: EthAddress,
 ) -> ContractAddress {
     let account_factory = IAccountFactoryDispatcher { contract_address: account_factory_addr };
     let signature = Signature { r: 0x1012, s: 0x1012, y_parity: true };
-    account_factory.deploy_account(:eth_address, :signature)
+    account_factory.deploy_account(:session_eth_address, :signature)
 }
 
 
@@ -106,16 +106,16 @@ fn test_deploy_account_deploys_once_and_reuses() {
     let account_factory = IAccountFactoryDispatcher { contract_address: account_factory_addr };
     let mut spy = snforge_std::spy_events();
 
-    let eth_address: EthAddress = '0x1012'.try_into().unwrap();
+    let session_eth_address: EthAddress = '0x1012'.try_into().unwrap();
 
     // Compute the expected account address using the same derivation logic as the contract.
     let expected_account = eth_address_to_account(
-        account_factory: account_factory_addr, :eth_address,
+        account_factory: account_factory_addr, eth_address: session_eth_address,
     );
 
     // First call: lazily deploys the primer, upgrades it to the account_class_hash, and
     // leaves the account contract at the expected address.
-    let account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let account_address = deploy_account_wrapper(:account_factory_addr, :session_eth_address);
     assert!(account_address == expected_account, "unexpected account address after first deploy");
     let class_hash_after_first = get_class_hash_at_syscall(account_address).unwrap_syscall();
     let expected_class_hash = account_factory.account_class_hash();
@@ -130,7 +130,7 @@ fn test_deploy_account_deploys_once_and_reuses() {
     )
         .unwrap();
     let expected_event = AccountDeployed {
-        account_class_hash: class_hash_after_first, eth_address, account_address,
+        account_class_hash: class_hash_after_first, account_address,
     };
     assert_expected_event_emitted(
         spied_event: spied_event,
@@ -141,7 +141,7 @@ fn test_deploy_account_deploys_once_and_reuses() {
 
     // Second call with the same parameters should reuse the same account and leave the
     // class hash unchanged.
-    let second_account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let second_account_address = deploy_account_wrapper(:account_factory_addr, :session_eth_address);
     assert!(second_account_address == account_address, "account address changed on reuse");
     let class_hash_after_second = get_class_hash_at_syscall(account_address).unwrap_syscall();
     assert!(
@@ -162,13 +162,13 @@ fn test_after_change_account_class_hash_reuses_existing_account() {
     let account_factory_addr = setup_account_factory_test_env();
     let account_factory = IAccountFactoryDispatcher { contract_address: account_factory_addr };
 
-    let eth_address: EthAddress = '0x1012'.try_into().unwrap();
+    let session_eth_address: EthAddress = '0x1012'.try_into().unwrap();
     let expected_account = eth_address_to_account(
-        account_factory: account_factory_addr, :eth_address,
+        account_factory: account_factory_addr, eth_address: session_eth_address,
     );
 
     // First call: deploys and upgrades to the initial account_class_hash.
-    let account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let account_address = deploy_account_wrapper(:account_factory_addr, :session_eth_address);
     assert!(account_address == expected_account, "unexpected account address after first deploy");
     let class_hash_after_first = get_class_hash_at_syscall(account_address).unwrap_syscall();
     let initial_class_hash = account_factory.account_class_hash();
@@ -187,7 +187,7 @@ fn test_after_change_account_class_hash_reuses_existing_account() {
     // Second call with the same parameters should reuse the same account and leave the
     // class hash unchanged.
     let mut second_spy = snforge_std::spy_events();
-    let second_account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let second_account_address = deploy_account_wrapper(:account_factory_addr, :session_eth_address);
     assert!(second_account_address == account_address, "account address changed on reuse");
     let class_hash_after_second = get_class_hash_at_syscall(account_address).unwrap_syscall();
     assert!(
@@ -213,13 +213,15 @@ fn test_change_account_class_hash_affects_only_new_users() {
     let account_factory = IAccountFactoryDispatcher { contract_address: account_factory_addr };
     let mut spy = snforge_std::spy_events();
 
-    let eth_address: EthAddress = '0x1012'.try_into().unwrap();
+    let session_eth_address: EthAddress = '0x1012'.try_into().unwrap();
     let expected_account = eth_address_to_account(
-        account_factory: account_factory_addr, :eth_address,
+        account_factory: account_factory_addr, eth_address: session_eth_address,
     );
 
     // First call: deploys and upgrades to the initial account_class_hash.
-    let first_account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let first_account_address = deploy_account_wrapper(
+        :account_factory_addr, :session_eth_address,
+    );
     assert!(
         first_account_address == expected_account, "unexpected account address after first deploy",
     );
@@ -238,18 +240,18 @@ fn test_change_account_class_hash_affects_only_new_users() {
     );
     account_factory.set_account_class_hash(new_class_hash: new_hash);
 
-    // Build parameters for a *new* Eth address so the contract derives a second account.
-    let new_eth_address: EthAddress = '0x1013'.try_into().unwrap();
+    // Build parameters for a *new* session Eth address so the contract derives a second account.
+    let new_session_eth_address: EthAddress = '0x1013'.try_into().unwrap();
     let expected_new_account = eth_address_to_account(
-        account_factory: account_factory_addr, eth_address: new_eth_address,
+        account_factory: account_factory_addr, eth_address: new_session_eth_address,
     );
 
     let new_account_address = deploy_account_wrapper(
-        :account_factory_addr, eth_address: new_eth_address,
+        :account_factory_addr, session_eth_address: new_session_eth_address,
     );
     assert!(
         new_account_address == expected_new_account,
-        "new account should be derived as expected from new Eth address",
+        "new account should be derived as expected from new session Eth address",
     );
     let class_hash_new_account = get_class_hash_at_syscall(new_account_address).unwrap_syscall();
     assert!(
@@ -262,9 +264,7 @@ fn test_change_account_class_hash_affects_only_new_users() {
     let spied_event = get_event_by_selector_n(:events, selector: selector!("AccountDeployed"), n: 1)
         .unwrap();
     let expected_event = AccountDeployed {
-        account_class_hash: new_hash,
-        eth_address: new_eth_address,
-        account_address: new_account_address,
+        account_class_hash: new_hash, account_address: new_account_address,
     };
     assert_expected_event_emitted(
         spied_event: spied_event,
@@ -275,7 +275,7 @@ fn test_change_account_class_hash_affects_only_new_users() {
 
     // Check that the original account doesn't change even though the account class hash has
     // changed.
-    let prev_account_address = deploy_account_wrapper(:account_factory_addr, :eth_address);
+    let prev_account_address = deploy_account_wrapper(:account_factory_addr, :session_eth_address);
     assert!(prev_account_address == expected_account, "original account should not change");
     let class_hash_prev_account = get_class_hash_at_syscall(prev_account_address).unwrap_syscall();
     assert!(

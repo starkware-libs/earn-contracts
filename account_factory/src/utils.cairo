@@ -12,9 +12,14 @@ pub const PRIMER_CLASS_HASH: ClassHash =
     .try_into()
     .unwrap();
 
+// Recomputed for scarb 2.16.1 release-profile builds. If you upgrade scarb
+// or change Primer source, rerun `sncast utils class-hash --package contracts
+// --contract-name Primer` and update this constant — the on-chain Primer
+// declaration's class hash MUST match this value or the factory's
+// deploy_syscall will fail with CLASS_NOT_DECLARED.
 #[cfg(not(target: "test"))]
 pub const PRIMER_CLASS_HASH: ClassHash =
-    0x00123e6bc1c14ae9934e933d3f64916a6116dd6b036a922b2b1f0815e0d1d300
+    0x03edae2158f4aea6295470678fc7de27e19d7e40f295cda90d786d17b3531fdf
     .try_into()
     .unwrap();
 
@@ -22,7 +27,9 @@ const CONTRACT_ADDRESS_PREFIX: felt252 = 'STARKNET_CONTRACT_ADDRESS';
 
 #[starknet::interface]
 pub(crate) trait IEthAccountInitializer<TContractState> {
-    fn initialize(ref self: TContractState, eth_address: EthAddress, signature: Signature);
+    fn initialize(
+        ref self: TContractState, owner_eth_address: EthAddress, signature: Signature,
+    );
 }
 
 /// Computes the Pedersen hash on the elements of the span using a hash state.

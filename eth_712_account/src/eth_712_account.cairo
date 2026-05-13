@@ -4,11 +4,14 @@
 /// StarknetEth712Account
 ///
 /// Account contract that supports ISRC9_V2 (Execute from outside v2) and ISRC5 (Introspection).
-/// The Account contract is initialized with an Ethereum address.
-/// The transaction executed by the account is validated using EIP-712.
-/// and signed using Secp256k1.
-/// This allows the account to sign the txs from the wallet of a remote chain,
-/// and execute them locally on Starknet.
+/// The account is initialized with an "owner" Ethereum-format address — the address
+/// derived from whichever secp256k1 public key authorizes outside executions.
+/// Transactions are validated using EIP-712 and signed using Secp256k1.
+///
+/// In the Tier 2 unlinkable flow the owner key is a fresh, client-derived session key,
+/// NOT the user's MetaMask key. The storage var is still named `eth_address` for
+/// storage-layout compatibility, but semantically it holds the *session* owner address
+/// and contains no information about the user's real Ethereum identity.
 
 #[starknet::contract(account)]
 pub mod StarknetEth712Account {
@@ -69,10 +72,12 @@ pub mod StarknetEth712Account {
 
     #[abi(embed_v0)]
     impl AdminImpl of IAccount712Admin<ContractState> {
-        fn initialize(ref self: ContractState, eth_address: EthAddress, signature: Signature) {
+        fn initialize(
+            ref self: ContractState, owner_eth_address: EthAddress, signature: Signature,
+        ) {
             assert(self.eth_address.read().is_zero(), 'ALREADY_INITIALIZED');
-            assert_valid_owner(:eth_address, :signature);
-            self.eth_address.write(eth_address);
+            assert_valid_owner(eth_address: owner_eth_address, :signature);
+            self.eth_address.write(owner_eth_address);
 
             // Register 'execute_from_outside_v2' interface, as paymaster requires this.
             self.src5.register_interface(ISRC9_V2_ID);

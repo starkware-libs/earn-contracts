@@ -5,8 +5,12 @@ use starknet::{ClassHash, ContractAddress, EthAddress};
 pub trait IAccountFactory<TContractState> {
     fn account_class_hash(self: @TContractState) -> ClassHash;
     fn set_account_class_hash(ref self: TContractState, new_class_hash: ClassHash);
+    /// `session_eth_address` is the Ethereum-format address of a fresh secp256k1 key
+    /// the client derived from a one-time MetaMask bootstrap signature. It is NOT the
+    /// user's MetaMask address; it has no on-chain history outside this account.
+    /// Passing the real MM address here would defeat the unlinkability property.
     fn deploy_account(
-        ref self: TContractState, eth_address: EthAddress, signature: Signature,
+        ref self: TContractState, session_eth_address: EthAddress, signature: Signature,
     ) -> ContractAddress;
 }
 
@@ -74,10 +78,14 @@ pub mod AccountFactory {
         pub new_class_hash: ClassHash,
     }
 
+    /// Emitted on first deploy of an account. `eth_address` is intentionally NOT
+    /// included so that on-chain indexers cannot trivially associate the account
+    /// with any externally-meaningful Ethereum identity. The deterministic salt
+    /// (`session_eth_address`) is recoverable off-chain only by the wallet that
+    /// holds the bootstrap signature.
     #[derive(Drop, starknet::Event, Debug, PartialEq)]
     pub struct AccountDeployed {
         pub account_class_hash: ClassHash,
-        pub eth_address: EthAddress,
         pub account_address: ContractAddress,
     }
 
@@ -114,12 +122,18 @@ pub mod AccountFactory {
                 );
         }
 
-        /// Returns the deterministic account contract address for the given Ethereum
-        /// address, deploying and upgrading a Primer contract on first use.
+        /// Returns the deterministic account contract address for the given session
+        /// Ethereum-format address, deploying and upgrading a Primer contract on
+        /// first use.
+        ///
+        /// Tier 2 unlinkability: callers MUST pass `session_eth_address` — the
+        /// address of a fresh secp256k1 key derived from a one-time MetaMask
+        /// bootstrap signature — NOT the user's real MetaMask address. The whole
+        /// privacy property collapses if the real MM address is used here.
         fn deploy_account(
-            ref self: ContractState, eth_address: EthAddress, signature: Signature,
+            ref self: ContractState, session_eth_address: EthAddress, signature: Signature,
         ) -> ContractAddress {
-            let account_address = eth_address_to_account(:eth_address);
+            let account_address = eth_address_to_account(eth_address: session_eth_address);
             // If the account contract is deployed, return the address.
             if is_deployed(addr: account_address) {
                 return account_address;
@@ -131,7 +145,7 @@ pub mod AccountFactory {
             // 3. Initialize the account contract.
             let (deployed_address, _retdata) = syscalls::deploy_syscall(
                 class_hash: PRIMER_CLASS_HASH,
-                contract_address_salt: eth_address.into(),
+                contract_address_salt: session_eth_address.into(),
                 calldata: [].span(),
                 deploy_from_zero: false,
             )
@@ -147,11 +161,12 @@ pub mod AccountFactory {
             let eth_account_initializer = IEthAccountInitializerDispatcher {
                 contract_address: account_address,
             };
-            eth_account_initializer.initialize(:eth_address, :signature);
+            eth_account_initializer
+                .initialize(owner_eth_address: session_eth_address, :signature);
             self
                 .emit(
                     Event::AccountDeployed(
-                        AccountDeployed { account_class_hash, eth_address, account_address },
+                        AccountDeployed { account_class_hash, account_address },
                     ),
                 );
 

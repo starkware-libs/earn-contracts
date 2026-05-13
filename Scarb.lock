@@ -22,6 +22,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "counter"
+version = "0.1.0"
+dependencies = [
+ "snforge_std",
+]
+
+[[package]]
 name = "earn_reporter"
 version = "0.1.0"
 dependencies = [
@@ -39,6 +46,17 @@ dependencies = [
  "openzeppelin",
  "snforge_std",
  "starkware_utils",
+ "starkware_utils_testing",
+ "testing_utils",
+]
+
+[[package]]
+name = "helpers"
+version = "0.1.0"
+dependencies = [
+ "account_factory",
+ "openzeppelin",
+ "snforge_std",
  "starkware_utils_testing",
  "testing_utils",
 ]
@@ -192,20 +210,6 @@ dependencies = [
  "openzeppelin",
  "snforge_std",
  "starkware_utils",
-]
-
-[[package]]
-name = "strategy_implementation"
-version = "0.1.0"
-dependencies = [
- "account_factory",
- "contracts",
- "earn_reporter",
- "openzeppelin",
- "snforge_std",
- "starkware_utils",
- "starkware_utils_testing",
- "testing_utils",
 ]
 
 [[package]]

@@ -16,6 +16,7 @@ starkware_utils_testing.workspace = true
 
 [[target.starknet-contract]]
 sierra = true
+casm = true
 
 [profile.dev.cairo]
 unstable-add-statements-functions-debug-info = true
