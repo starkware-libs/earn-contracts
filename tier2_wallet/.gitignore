@@ -1,0 +1,15 @@
+node_modules/
+dist/
+demo/dist/
+*.log
+.DS_Store
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+demo/config.ts
+
+# Local deployment artifacts (per-developer addresses; uncomment if you
+# want to share them via git instead).
+# sepolia-deployments.json

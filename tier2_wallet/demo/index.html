@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tier 2 Wallet — MetaMask demo</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Tier 2 Wallet — MetaMask demo</h1>
+      <p class="lead">
+        Derive an unlinkable Starknet account key from a single MetaMask
+        signature, then deploy it on Starknet Sepolia via the privacy pool +
+        AVNU paymaster (Alice's pool notes pay the gas — MetaMask never
+        signs a Starknet tx and is not referenced on chain).
+      </p>
+
+      <section>
+        <h2>1. Connect</h2>
+        <button id="connect-btn">Connect MetaMask</button>
+        <div class="kv">
+          <span class="k">MetaMask address</span>
+          <code id="mm-addr">—</code>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Derive session key</h2>
+        <p>
+          MetaMask is asked to sign the fixed bootstrap message below. The
+          signature is hashed with keccak256 to seed a fresh secp256k1
+          keypair. <strong>The resulting key is independent of your MetaMask
+          address</strong> — the on-chain account will hold this fresh key,
+          not the MetaMask one.
+        </p>
+        <div class="kv">
+          <span class="k">Bootstrap message</span>
+          <code id="bootstrap-msg">—</code>
+        </div>
+        <button id="derive-btn" disabled>Sign in MetaMask &amp; derive</button>
+        <div class="kv">
+          <span class="k">Session ETH address</span>
+          <code id="session-addr">—</code>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. Compute Starknet account address</h2>
+        <p>
+          Deterministic Pedersen hash over the session address + factory
+          address + Primer class hash. This matches what
+          <code>account_factory::deploy_account</code> would derive on-chain.
+        </p>
+        <div class="form">
+          <label>
+            Factory address
+            <input
+              id="factory-input"
+              type="text"
+              value="0x0000000000000000000000000000000000000000000000000000000000000000"
+              placeholder="0x..."
+            />
+          </label>
+          <label>
+            Network
+            <select id="network-select">
+              <option value="prod">prod (mainnet primer)</option>
+              <option value="test">test (snforge primer)</option>
+            </select>
+          </label>
+        </div>
+        <button id="compute-btn" disabled>Compute</button>
+        <div class="kv">
+          <span class="k">Starknet account address</span>
+          <code id="account-addr">—</code>
+        </div>
+      </section>
+
+      <section>
+        <h2>4. Ownership signature</h2>
+        <p>
+          Produce the secp256k1 signature over
+          <code>OWNERSHIP_TRANSFER_MSG_HASH</code> that the factory's
+          <code>deploy_account</code> consumes. The output is the 5-felt
+          calldata layout of <code>Signature { r, s, y_parity }</code>.
+        </p>
+        <button id="sign-btn" disabled>Sign ownership message</button>
+        <div class="kv kv--block">
+          <span class="k">Signature felts (calldata for deploy_account)</span>
+          <pre id="ownership-sig">—</pre>
+        </div>
+      </section>
+
+      <section>
+        <h2>5. Sponsored private deploy</h2>
+        <p>
+          Push the session key on chain via Alice's privacy-pool notes. The
+          AVNU paymaster's <code>sponsored_private</code> mode bundles a
+          fee-withdraw from Alice's notes into the same proof that calls
+          <code>EarnDeployHelper.privacy_invoke</code> →
+          <code>factory.deploy_account</code>. Alice signs the proof off-chain;
+          AVNU's relayer submits the tx; <strong>MetaMask is not involved at
+          all.</strong>
+        </p>
+        <button id="sponsored-btn" disabled>Deploy via Alice + privacy pool</button>
+        <div class="kv kv--block">
+          <span class="k">Result</span>
+          <pre id="sponsored-output">—</pre>
+        </div>
+        <div class="kv kv--block">
+          <span class="k">Live progress</span>
+          <pre id="sponsored-log" class="log"></pre>
+        </div>
+      </section>
+
+      <section>
+        <h2>6. Call Counter via your Tier 2 account</h2>
+        <p>
+          Sign an EIP-712 <code>OutsideExecution</code> with the session key
+          (no MetaMask popup — the session key is in memory from step 2).
+          The signature is forwarded through <code>EarnInvokeHelper</code> in
+          the same kind of <code>sponsored_private</code> envelope as the
+          deploy: Alice's notes pay the gas, AVNU's relayer signs and submits
+          the tx, the Tier 2 account validates the signature and runs
+          <code>Counter.increment()</code>.
+        </p>
+        <div class="kv">
+          <span class="k">Counter address</span>
+          <code id="counter-addr-display">—</code>
+        </div>
+        <div class="kv">
+          <span class="k">Count (before)</span>
+          <code id="counter-value-before">—</code>
+          <button id="counter-read-btn">refresh</button>
+          <span class="k" style="margin-left:1rem">Count (after)</span>
+          <code id="counter-value-after">—</code>
+        </div>
+        <button id="counter-btn">Increment counter via Tier 2 account</button>
+        <div class="kv kv--block">
+          <span class="k">Result</span>
+          <pre id="counter-output">—</pre>
+        </div>
+        <div class="kv kv--block">
+          <span class="k">Live progress</span>
+          <pre id="counter-log" class="log"></pre>
+        </div>
+      </section>
+
+      <p id="status" class="status status--info">Ready.</p>
+
+      <footer>
+        <p>
+          End-to-end Tier 2 unlinkable deploy. The user holds only MetaMask;
+          Alice holds the pool notes that pay every user's deploy gas. On
+          chain, the deployed account's owner is a fresh secp256k1 key whose
+          relationship to any MetaMask address is recoverable only by the
+          browser session that derived it.
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="dist/demo.js"></script>
+  </body>
+</html>

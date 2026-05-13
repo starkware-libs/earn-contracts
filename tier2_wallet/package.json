@@ -1,0 +1,39 @@
+{
+  "name": "tier2-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client primitives for the Tier 2 unlinkable Starknet account flow: derive a fresh session key from a MetaMask bootstrap signature, compute the deterministic Starknet account address, and sign ownership + EIP-712 OutsideExecution payloads.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "demo:bundle": "esbuild demo/demo.ts --bundle --format=esm --target=es2022 --outfile=demo/dist/demo.js --sourcemap",
+    "demo:serve": "bash demo/serve.sh",
+    "demo": "npm run demo:bundle && npm run demo:serve",
+    "build:contracts": "cd .. && SCARB_PROFILE=release scarb build",
+    "deploy:contracts": "npm run build:contracts && tsx scripts/deploy-contracts.ts",
+    "deploy:extras": "npm run build:contracts && tsx scripts/deploy-extras.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.6.0",
+    "@noble/hashes": "^1.5.0",
+    "@starkware-libs/starknet-privacy-sdk": "file:../../privacy/starknet-privacy/sdk",
+    "dotenv": "^17.4.2",
+    "starknet": "^10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.23.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
