@@ -8,6 +8,14 @@ pub trait IAccountFactory<TContractState> {
     fn deploy_account(
         ref self: TContractState, eth_address: EthAddress, signature: Signature,
     ) -> ContractAddress;
+    /// Returns the deterministic account address for the given Ethereum address,
+    /// whether or not it has been deployed.
+    fn get_expected_account_address(
+        self: @TContractState, eth_address: EthAddress,
+    ) -> ContractAddress;
+    /// Returns the account address for the given Ethereum address if it is deployed,
+    /// or zero otherwise.
+    fn get_account(self: @TContractState, eth_address: EthAddress) -> ContractAddress;
 }
 
 #[starknet::contract]
@@ -19,6 +27,7 @@ pub mod AccountFactory {
         eth_address_to_account, is_deployed,
     };
     use contracts::primer::primer::{IPrimerDispatcher, IPrimerDispatcherTrait};
+    use core::num::traits::Zero;
     use core::traits::Into;
     use openzeppelin::access::accesscontrol::AccessControlComponent;
     use openzeppelin::introspection::src5::SRC5Component;
@@ -97,6 +106,21 @@ pub mod AccountFactory {
     impl AccountFactoryImpl of IAccountFactory<ContractState> {
         fn account_class_hash(self: @ContractState) -> ClassHash {
             self.account_class_hash.read()
+        }
+
+        fn get_expected_account_address(
+            self: @ContractState, eth_address: EthAddress,
+        ) -> ContractAddress {
+            eth_address_to_account(:eth_address)
+        }
+
+        fn get_account(self: @ContractState, eth_address: EthAddress) -> ContractAddress {
+            let account_address = eth_address_to_account(:eth_address);
+            if is_deployed(addr: account_address) {
+                account_address
+            } else {
+                Zero::zero()
+            }
         }
 
         fn set_account_class_hash(ref self: ContractState, new_class_hash: ClassHash) {
