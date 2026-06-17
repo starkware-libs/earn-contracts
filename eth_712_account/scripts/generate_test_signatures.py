@@ -30,6 +30,7 @@ import re
 from eip712 import (
     ANY_CALLER,
     MASK_128,
+    call_set_msg_hash,
     outside_execution_msg_hash,
     resource_bounds_to_felts,
     selector,
@@ -85,6 +86,17 @@ def sign_transaction(
 ) -> dict:
     """Sign a Transaction (__validate__) and return 6-felt signature dict."""
     msg_hash = transaction_msg_hash(calls, metadata, sn_chain_name, contract_address, evm_chain_id)
+    return sign_and_split(msg_hash, PRIVATE_KEY, evm_chain_id)
+
+
+def sign_call_set(
+    calls: list[dict],
+    contract_address: int,
+    evm_chain_id: int = ETH_CHAIN_ID,
+    sn_chain_name: str = SN_CHAIN_ID,
+) -> dict:
+    """Sign a CallSet and return 6-felt signature dict."""
+    msg_hash = call_set_msg_hash(calls, sn_chain_name, contract_address, evm_chain_id)
     return sign_and_split(msg_hash, PRIVATE_KEY, evm_chain_id)
 
 
@@ -233,6 +245,22 @@ def generate_validate_empty_calls(contract_address: int, nonce: int = VALIDATE_N
     return sign_transaction([], build_validate_metadata(nonce), contract_address)
 
 
+def generate_call_set_empty_calls(contract_address: int) -> dict:
+    """CallSet signature with empty calls.
+
+    The CallSet message has no tx metadata — it depends only on the domain and the calls.
+    """
+    return sign_call_set([], contract_address)
+
+
+def generate_call_set_with_approve(
+    contract_address: int, token: int, spender: int, amount: int,
+) -> dict:
+    """CallSet signature over a single approve call."""
+    call = _approve_call(token, spender, amount)
+    return sign_call_set([call], contract_address)
+
+
 def generate_validate_with_approve(
     contract_address: int, token: int, spender: int, amount: int, nonce: int = VALIDATE_NONCE,
 ) -> dict:
@@ -375,6 +403,20 @@ def generate_all_signatures() -> list[str]:
     blocks.append(format_signature_cairo(
         sig, "get_validate_wrong_chain_signature",
         "__validate__ signature signed with SN_SEPOLIA domain (fails against SN_MAIN).",
+    ))
+
+    # --- CallSet ---
+
+    sig = generate_call_set_empty_calls(addr)
+    blocks.append(format_signature_cairo(
+        sig, "get_call_set_empty_calls_signature",
+        "CallSet signature: empty calls.",
+    ))
+
+    sig = generate_call_set_with_approve(addr, token, spender, APPROVE_AMOUNT)
+    blocks.append(format_signature_cairo(
+        sig, "get_call_set_with_approve_signature",
+        "CallSet signature: approve(0x1234, 500).",
     ))
 
     # --- Upgrade ---

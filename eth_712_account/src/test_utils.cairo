@@ -398,6 +398,22 @@ pub fn get_validate_wrong_chain_signature() -> Array<felt252> {
     ]
 }
 
+/// CallSet (is_custom_signature_valid) signature: empty calls.
+pub fn get_call_set_empty_calls_signature() -> Array<felt252> {
+    array![
+        0x11cee778b1a3ba866a439382d6b26b35, 0x1cab2f50409c7c0d6187913368bdee83,
+        0x190d7ea7ed02b507d88e80ddb00226f2, 0x2d619a590aa9ca7cf9a95dc3f67a6003, 27, 1,
+    ]
+}
+
+/// CallSet (is_custom_signature_valid) signature: approve(0x1234, 500).
+pub fn get_call_set_with_approve_signature() -> Array<felt252> {
+    array![
+        0x58f230103442642a871a95169721238e, 0x01073d1bc0d10e0380a893535feed316,
+        0x2524d9747aa3d60b1b927d3e0cf0bd33, 0x749f0c51d940dbb3368f9a92dc762d87, 27, 1,
+    ]
+}
+
 /// EFO signature: upgrade(FIXED_UPGRADE_TARGET_CLASS_HASH, None), nonce=200.
 pub fn get_efo_upgrade_signature() -> Array<felt252> {
     array![

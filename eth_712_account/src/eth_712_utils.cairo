@@ -33,6 +33,11 @@ const TRANSACTION_METADATA_TYPE_HASH: u256 =
 const TRANSACTION_TYPE_HASH: u256 =
     0x1dc45489b8d4418703686ca441c4ea8ead534ff02815a47b9059490edf3a0c68_u256;
 
+// EIP-712 encodeType hash for CallSet (a standalone authorization over just the calls).
+// keccak256("CallSet(Call[] calls)Call(uint256 address,uint256 selector,uint256[] data)")
+const CALL_SET_TYPE_HASH: u256 =
+    0x00e0d1180501b61e32e630264491a7c9a611d81184f8a1cf1e41e1343bb396df_u256;
+
 // keccak("2") (version of the EIP-712 domain).
 const VERSION_HASH: u256 = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5_u256;
 
@@ -109,7 +114,7 @@ fn push_call_array(ref res: ByteArray, calls: Span<Call>) {
     push_keccak(ref res, @byte_array);
 }
 
-pub fn push_outside_execution(ref res: ByteArray, outside_execution: @OutsideExecution) {
+fn outside_execution_hash_struct(outside_execution: @OutsideExecution) -> u256 {
     let mut byte_array: ByteArray = "";
 
     push_u256(ref byte_array, OUTSIDE_EXECUTION_TYPE_HASH);
@@ -122,7 +127,7 @@ pub fn push_outside_execution(ref res: ByteArray, outside_execution: @OutsideExe
     push_felt(ref byte_array, nonce);
     push_felt(ref byte_array, execute_after.into());
     push_felt(ref byte_array, execute_before.into());
-    push_keccak(ref res, @byte_array);
+    reverse_u256(compute_keccak_byte_array(@byte_array))
 }
 
 // ================================
@@ -142,27 +147,36 @@ pub fn push_metadata(ref res: ByteArray, metadata: @TransactionMetadata) {
     push_keccak(ref res, @byte_array);
 }
 
-pub fn push_transaction(ref res: ByteArray, transaction: @Transaction) {
+fn transaction_hash_struct(transaction: @Transaction) -> u256 {
     let mut byte_array: ByteArray = "";
     push_u256(ref byte_array, TRANSACTION_TYPE_HASH);
 
     push_call_array(ref byte_array, *transaction.calls);
     push_metadata(ref byte_array, *transaction.metadata);
 
-    push_keccak(ref res, @byte_array);
+    reverse_u256(compute_keccak_byte_array(@byte_array))
 }
 
 pub fn get_transaction_hash(transaction: @Transaction, chain_id: felt252) -> u256 {
+    eip712_message_hash(:chain_id, struct_hash: transaction_hash_struct(transaction))
+}
+
+// ================================
+// CallSet hashing
+// ================================
+
+/// EIP-712 `hashStruct` of a `CallSet { calls }`: the type hash followed by the hash of the
+/// call array.
+fn call_set_hash_struct(calls: Span<Call>) -> u256 {
     let mut byte_array: ByteArray = "";
-
-    // EIP-191 header.
-    byte_array.append_byte(0x19);
-    byte_array.append_byte(0x1);
-
-    push_domain_separator(ref byte_array, chain_id);
-    push_transaction(ref byte_array, transaction);
-
+    push_u256(ref byte_array, CALL_SET_TYPE_HASH);
+    push_call_array(ref byte_array, calls);
     reverse_u256(compute_keccak_byte_array(@byte_array))
+}
+
+/// EIP-712 message hash of a `CallSet`.
+pub fn get_call_set_hash(calls: Span<Call>, chain_id: felt252) -> u256 {
+    eip712_message_hash(:chain_id, struct_hash: call_set_hash_struct(calls))
 }
 
 pub fn push_domain_separator(ref res: ByteArray, chain_id: felt252) {
@@ -186,13 +200,9 @@ pub fn push_domain_separator(ref res: ByteArray, chain_id: felt252) {
     push_keccak(ref res, @byte_array);
 }
 
-fn contract_address_low() -> u256 {
-    let address_felt: felt252 = starknet::get_contract_address().into();
-    let address_u256: u256 = address_felt.into();
-    u256 { low: address_u256.low, high: 0_u128 }
-}
-
-pub fn get_outside_execution_hash(outside_execution: @OutsideExecution, chain_id: felt252) -> u256 {
+/// EIP-712 message hash: `keccak(0x19 0x01 || domainSeparator(chain_id) || struct_hash)`.
+/// The shared envelope for all typed messages (`Transaction`, `OutsideExecution`, `CallSet`).
+fn eip712_message_hash(chain_id: felt252, struct_hash: u256) -> u256 {
     let mut byte_array: ByteArray = "";
 
     // EIP-191 header.
@@ -200,9 +210,19 @@ pub fn get_outside_execution_hash(outside_execution: @OutsideExecution, chain_id
     byte_array.append_byte(0x1);
 
     push_domain_separator(ref byte_array, chain_id);
-    push_outside_execution(ref byte_array, outside_execution);
+    push_u256(ref byte_array, struct_hash);
 
     reverse_u256(compute_keccak_byte_array(@byte_array))
+}
+
+fn contract_address_low() -> u256 {
+    let address_felt: felt252 = starknet::get_contract_address().into();
+    let address_u256: u256 = address_felt.into();
+    u256 { low: address_u256.low, high: 0_u128 }
+}
+
+pub fn get_outside_execution_hash(outside_execution: @OutsideExecution, chain_id: felt252) -> u256 {
+    eip712_message_hash(:chain_id, struct_hash: outside_execution_hash_struct(outside_execution))
 }
 
 /// Returns the eth address of the signer of the message, or None if the signature is malformed.

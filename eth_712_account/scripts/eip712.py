@@ -27,6 +27,8 @@ CALL_TYPE_HASH = 0x7793b9bed3b87c6119fe923f0da4e85e1f97a03272a446514622ee7bd62ad
 OUTSIDE_EXECUTION_TYPE_HASH = 0x57fbef2abe14202f3651b3935a8feddd357b8f83a862e046239d196ec76f281e
 TRANSACTION_METADATA_TYPE_HASH = 0x3e1a84b9a25a2ffe216927b61cc91a10921dabd3305985281d0bb9707b0d8310
 TRANSACTION_TYPE_HASH = 0x1dc45489b8d4418703686ca441c4ea8ead534ff02815a47b9059490edf3a0c68
+# keccak256("CallSet(Call[] calls)Call(uint256 address,uint256 selector,uint256[] data)")
+CALL_SET_TYPE_HASH = 0x00e0d1180501b61e32e630264491a7c9a611d81184f8a1cf1e41e1343bb396df
 VERSION_HASH = 0xad7c5bef027816a800da1736444fb58a807ef4c9603b7848673f7e3a68eb14a5
 
 # ============================================================================
@@ -190,6 +192,26 @@ def transaction_msg_hash(
     """Compute the full EIP-712 message hash for a Transaction (__validate__)."""
     ds = domain_separator(sn_chain_name, contract_address, evm_chain_id)
     sh = hash_transaction(calls, metadata)
+    data = b"\x19\x01" + to_bytes32(ds) + to_bytes32(sh)
+    return int.from_bytes(keccak256(data), "big")
+
+
+# ============================================================================
+# CallSet hashing
+# ============================================================================
+
+
+def hash_call_set(calls: list[dict]) -> int:
+    """Hash CallSet struct matching push_call_set in eth_712_utils.cairo."""
+    return keccak_ints(CALL_SET_TYPE_HASH, hash_call_array(calls))
+
+
+def call_set_msg_hash(
+    calls: list[dict], sn_chain_name: str, contract_address: int, evm_chain_id: int,
+) -> int:
+    """Compute the full EIP-712 message hash for a CallSet."""
+    ds = domain_separator(sn_chain_name, contract_address, evm_chain_id)
+    sh = hash_call_set(calls)
     data = b"\x19\x01" + to_bytes32(ds) + to_bytes32(sh)
     return int.from_bytes(keccak256(data), "big")
 
