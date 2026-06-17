@@ -1,4 +1,7 @@
-use eth_712_account::interface::{IAccount712AdminDispatcher, IAccount712AdminDispatcherTrait};
+use eth_712_account::interface::{
+    IAccount712AdminDispatcher, IAccount712AdminDispatcherTrait, ICUSTOM_SIGNATURE_VALIDATION_ID,
+    ICustomSignatureValidationDispatcher, ICustomSignatureValidationDispatcherTrait,
+};
 use eth_712_account::test_utils::{
     APPROVE_AMOUNT, APPROVE_SPENDER, EXECUTE_AFTER, EXECUTE_BEFORE, FIXED_UPGRADE_TARGET_CLASS_HASH,
     MOCK_ERC20_INITIAL_SUPPLY, NONCE_ATOMICITY, NONCE_EFO_UPGRADE, NONCE_MULTI_CALL,
@@ -6,7 +9,8 @@ use eth_712_account::test_utils::{
     TEST_NONCE, VALIDATE_NONCE_UPGRADE, VALIDATE_NONCE_WITH_CALLS, assert_upgraded_event,
     build_outside_execution_with_calls, build_outside_execution_with_specific_caller,
     build_transfer_call, declare_register_interfaces_eic, deploy_eth712_account, deploy_mock_erc20,
-    get_approve_call, get_atomicity_test_signature, get_efo_upgrade_signature,
+    get_approve_call, get_atomicity_test_signature, get_call_set_empty_calls_signature,
+    get_call_set_with_approve_signature, get_efo_upgrade_signature,
     get_invalid_outside_execution_signature, get_invalid_signature, get_multi_call_signature,
     get_outside_execution_signature, get_ownership_signature, get_signature_evm_chain_id_2,
     get_signature_wrong_contract_address, get_signature_wrong_sn_chain_name,
@@ -52,6 +56,10 @@ fn test_initialize_success() {
     let src5 = ISRC5Dispatcher { contract_address: account_address };
     assert!(src5.supports_interface(ISRC9_V2_ID), "ISRC9_V2_ID not registered");
     assert!(src5.supports_interface(ISRC6_ID), "ISRC6_ID not registered");
+    assert!(
+        src5.supports_interface(ICUSTOM_SIGNATURE_VALIDATION_ID),
+        "ICUSTOM_SIGNATURE_VALIDATION_ID not registered",
+    );
 }
 
 #[test]
@@ -573,6 +581,66 @@ fn test_validate_invalid_signature_reverts() {
     cheat_signature(account_address, garbage_sig.span(), CheatSpan::Indefinite);
 
     account.__validate__(array![]);
+}
+
+// ================================
+// Custom signature validation (is_custom_signature_valid) tests
+// ================================
+
+#[test]
+fn test_is_custom_signature_valid_empty_calls_success() {
+    // Validates the EIP-712 `CallSet { calls }` message (NOT the transaction message).
+    let (_, account_address) = setup_validate_test();
+    let custom = ICustomSignatureValidationDispatcher { contract_address: account_address };
+
+    let sig = get_call_set_empty_calls_signature();
+    let result = custom.is_custom_signature_valid(array![].span(), sig.span());
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED");
+}
+
+#[test]
+fn test_is_custom_signature_valid_with_calls_success() {
+    // The signature binds the actual calls: a `CallSet` over [approve(...)] must validate.
+    let (_, account_address) = setup_validate_test();
+    let custom = ICustomSignatureValidationDispatcher { contract_address: account_address };
+
+    let sig = get_call_set_with_approve_signature();
+    let result = custom.is_custom_signature_valid(array![get_approve_call()].span(), sig.span());
+    assert!(result == starknet::VALIDATED, "Expected VALIDATED");
+}
+
+#[test]
+fn test_is_custom_signature_valid_wrong_calls_returns_zero() {
+    // A `CallSet` signature over empty calls must NOT validate a different call set.
+    let (_, account_address) = setup_validate_test();
+    let custom = ICustomSignatureValidationDispatcher { contract_address: account_address };
+
+    let sig = get_call_set_empty_calls_signature();
+    let result = custom.is_custom_signature_valid(array![get_approve_call()].span(), sig.span());
+    assert!(result == 0, "Expected 0 for a mismatched call set");
+}
+
+#[test]
+fn test_is_custom_signature_valid_rejects_transaction_signature() {
+    // A signature over the __validate__ `Transaction` message must NOT validate as a `CallSet`
+    // (different message, different domain-bound hash) — no cross-message replay.
+    let (_, account_address) = setup_validate_test();
+    let custom = ICustomSignatureValidationDispatcher { contract_address: account_address };
+
+    let tx_sig = get_validate_empty_calls_signature();
+    let result = custom.is_custom_signature_valid(array![].span(), tx_sig.span());
+    assert!(result == 0, "Transaction-message signature must not validate as a CallSet");
+}
+
+#[test]
+fn test_is_custom_signature_valid_invalid_returns_zero() {
+    // A bad signature must return 0 (NOT revert) — unlike __validate__, the caller decides.
+    let (_, account_address) = setup_validate_test();
+    let custom = ICustomSignatureValidationDispatcher { contract_address: account_address };
+
+    let garbage_sig = array![0x1, 0x2, 0x3, 0x4, 28, 1];
+    let result = custom.is_custom_signature_valid(array![].span(), garbage_sig.span());
+    assert!(result == 0, "Expected 0 for invalid signature");
 }
 
 #[test]

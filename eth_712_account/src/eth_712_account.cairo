@@ -13,11 +13,12 @@ pub mod StarknetEth712Account {
     use core::num::traits::Zero;
     use eth_712_account::eth_712_utils::{
         Transaction, TransactionMetadata, assert_valid_owner, extract_signature,
-        extract_signature_flexible, get_outside_execution_hash, get_transaction_hash,
-        is_tx_version_valid, is_valid_eth_signature, resource_bounds_as_felts,
+        extract_signature_flexible, get_call_set_hash, get_outside_execution_hash,
+        get_transaction_hash, is_tx_version_valid, is_valid_eth_signature, resource_bounds_as_felts,
     };
     use eth_712_account::interface::{
-        IAccount712Admin, IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
+        IAccount712Admin, ICUSTOM_SIGNATURE_VALIDATION_ID, ICustomSignatureValidation,
+        IEICDispatcherTrait, IEICLibraryDispatcher, Upgraded,
     };
     use openzeppelin::account::extensions::src9::interface::ISRC9_V2_ID;
     use openzeppelin::account::extensions::src9::{ISRC9_V2, OutsideExecution};
@@ -104,6 +105,29 @@ pub mod StarknetEth712Account {
     }
 
     // ================================
+    // Custom Signature Validation
+    // ================================
+
+    #[abi(embed_v0)]
+    impl CustomSignatureValidationImpl of ICustomSignatureValidation<ContractState> {
+        /// Validates owner signature over the EIP-712 `CallSet { calls }` message.
+        /// Independent of the tx's metadata (version/resource-bounds/nonce etc.).
+        /// Returns `VALIDATED` for a valid 6-felt signature and 0 for an invalid one.
+        /// Reverts on a malformed signature.
+        fn is_custom_signature_valid(
+            self: @ContractState, calls: Span<Call>, signature: Span<felt252>,
+        ) -> felt252 {
+            let (signature, evm_chain_id) = extract_signature(signature);
+            let msg_hash = get_call_set_hash(calls, chain_id: evm_chain_id);
+            if is_valid_eth_signature(:msg_hash, :signature, eth_address: self.eth_address.read()) {
+                starknet::VALIDATED
+            } else {
+                0
+            }
+        }
+    }
+
+    // ================================
     // Admin Implementation
     // ================================
 
@@ -118,6 +142,9 @@ pub mod StarknetEth712Account {
             self.src5.register_interface(ISRC9_V2_ID);
             // Register Account interface (ISRC6) so that we can receive 721/1155 tokens.
             self.src5.register_interface(ISRC6_ID);
+            // Register the custom-signature-validation.
+            // Custom Validation is an opt-in, callers need to detect that the account supports it.
+            self.src5.register_interface(ICUSTOM_SIGNATURE_VALIDATION_ID);
         }
 
         fn upgrade(
